@@ -1,0 +1,12 @@
+# Sync-generated knowledge base (regenerated per-dev via /sync)
+plugins/*/skills/*/references/*.md
+plugins/*/skills/*/references/.last-sync
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
