@@ -90,6 +90,20 @@ Check each rule below. For every violation found, report: file, line number (if 
 **Check:** Look for screens missing EventDTO with screen_view, buttons missing event tracking
 **Fix:** Create EventManager with appropriate event constants
 
+### Rule 13: Tap handling — WeInkWell (severity: ERROR)
+**Violation:** `GestureDetector(onTap:` used for simple tap handling
+**Check:** Grep for `GestureDetector(` in UI code. If only `onTap` is used (no onLongPress, onPan, onScale, drag), it should be `WeInkWell`
+**Fix:** Replace `GestureDetector(onTap: ..., child: ...)` with `WeInkWell(onTap: ..., child: ...)`
+**Exception:** GestureDetector is allowed when using complex gestures (long press, pan, scale, drag)
+
+### Rule 14: Icon/Image loading — AssetsHelper (severity: ERROR)
+**Violation:** `SvgPicture.asset(`, `SvgPicture.network(`, `Image.asset(` used directly for app icons
+**Check:** Grep for `SvgPicture.asset(`, `SvgPicture.network(`, `Image.asset(` in UI files
+**Fix:** Replace with `AssetsHelper.svg(assetName: SVGAssetsPath.xxx)`, `AssetsHelper.png(assetName: PNGAssetsPath.xxx)`, or `AssetsHelper.pngNetwork(assetName: url)`
+**Also check:** Hardcoded S3 URLs (wheelseye.com/static-content) inline instead of using path constants
+**Fix:** Move URL to `SVGAssetsPath` or `PNGAssetsPath` constant, then use via AssetsHelper
+**Exception:** `Image.network()` is allowed for dynamic user-uploaded images (profile pics, documents from API)
+
 ## Output format
 
 Present results grouped by severity:
