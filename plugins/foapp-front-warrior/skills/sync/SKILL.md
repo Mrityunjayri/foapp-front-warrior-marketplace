@@ -180,13 +180,33 @@ For each feature area:
 
 ---
 
+## Output locations
+
+Write output to TWO places:
+
+### A. Plugin context/ directory (auto-loaded every session)
+These files are loaded automatically when the plugin starts. Keep them concise but comprehensive.
+
+Write to the `context/` directory (sibling to this `skills/` folder):
+- `context/feature-map.md` — All apps, screens, BLoCs, APIs summary table
+- `context/android-architecture.md` — Android modules, Activities, ViewModels, DI, Flutter bridge tree
+- `context/bridge-map.md` — All MethodChannel connections, action providers, data formats
+- `context/widget-api-catalog.md` — Widget catalog + API endpoints catalog
+
+### B. References directory (detailed, on-demand)
+Write detailed analysis to `references/` inside this skill folder:
+- `references/design-tokens.md`
+- `references/migration-tracker.md`
+- `references/coding-rules.md`
+- `references/.last-sync` (timestamp)
+
 ## Execution order
 
 1. Scan Flutter repo first (faster, well-structured)
 2. Scan Android repo (larger, less structured)
 3. Build bridge map (cross-references both)
 4. Build migration tracker (needs both repos scanned)
-5. Write all reference files
+5. Write all reference files AND context files
 6. Write timestamp to `references/.last-sync`
 7. Print summary
 
