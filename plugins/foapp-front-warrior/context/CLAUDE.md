@@ -514,76 +514,82 @@ locator<MyRepository>()
 
 ## 14. Firebase Analytics / WeLytics
 
-### Event structure using `EventDTO`:
+### EventManager — Static singleton pattern (NOT GetIt locator):
+
+EventManagers use **static singleton pattern** — they are NOT registered in `locator.dart` / GetIt.
+For new features, extend `WeLyticsEventManagerV2` (from `package:we_base/we_lytics_manager.dart`).
 
 ```dart
-EventDTO(
-  eventName: EventName.screen_view,      // snake_case constant
-  eventAction: CoreEventAction.view,     // 'view' | 'click' | 'engagement'
-  eventCategory: EventCategory.my_screen,
-  screenName: 'my_feature_screen',
-  targetProduct: 'gps',                  // product identifier
-  vehicleId: vehicleId,                  // optional
-  miscellaneous: 'key1:val1::key2:val2', // pipe-delimited key-value pairs
-)
+import 'package:we_base/we_lytics_manager.dart';
+
+class MyEventManager extends WeLyticsEventManagerV2 {
+  static final MyEventManager instance = MyEventManager._();
+
+  MyEventManager._() : super(targetProduct: 'gps');
+
+  void screenView({String? vehicleId, required String screenName}) {
+    super.sendEvent(
+      eventName: EventName.screenView,
+      screenName: screenName,
+      eventAction: CoreEventAction.view,
+      vehicleID: vehicleId,   // note: capital D
+    );
+  }
+
+  void onTapContinue({String? vehicleId}) {
+    super.sendEvent(
+      eventName: MyEventName.submitBtn,
+      screenName: MyScreenName.myScreen,
+      eventAction: CoreEventAction.click,
+      vehicleID: vehicleId,
+    );
+  }
+}
+```
+
+### Usage — always via `.instance`:
+```dart
+// In initState (screen_view):
+MyEventManager.instance.screenView(
+  screenName: MyScreenName.myScreen,
+  vehicleId: widget.vehicleId,
+);
+
+// In onTap (click event):
+MyEventManager.instance.onTapContinue(vehicleId: vehicleId);
 ```
 
 ### Define event constants in the feature's analytics file:
 ```dart
-class EventName {
-  static const String screen_view = "screen_view";
-  static const String my_btn = "my_btn";
-  static const String submit_btn = "submit_btn";
+class MyEventName {
+  static const screenView = 'screen_view';
+  static const submitBtn = 'submit_btn';
+  static const filterClick = 'filter_click';
 }
 
-class EventCategory {
-  static const String my_feature_screen = 'my_feature_screen';
-}
-```
-
-### Build miscellaneous string with helpers:
-```dart
-// Pattern: "key1:value1::key2:value2"
-miscellaneous: "vehicle_id:$vehicleId::plan_name:$planName::tab_type:$tabType"
-```
-
-### Send events via EventManager:
-```dart
-class MyEventManager extends BaseEventManager {
-  MyEventManager() : super(
-    targetProduct: 'gps',
-    dispatcher: EventDispatcherV2(),
-  );
-
-  void screenView() {
-    sendEvent(EventDTO(
-      eventName: EventName.screen_view,
-      eventAction: CoreEventAction.view,
-      screenName: 'my_screen',
-      targetProduct: targetProduct,
-    ));
-  }
-
-  void onTapContinue(String vehicleId) {
-    sendEvent(EventDTO(
-      eventName: EventName.submit_btn,
-      eventAction: CoreEventAction.click,
-      screenName: 'my_screen',
-      targetProduct: targetProduct,
-      vehicleId: vehicleId,
-    ));
-  }
+class MyScreenName {
+  static const myScreen = 'my_feature_screen';
 }
 ```
 
-### Register and use via locator:
+### Build miscellaneous string with `EventMiscellaneous` builder:
 ```dart
-locator.registerSingleton<MyEventManager>(MyEventManager());
-
-// Usage:
-locator<MyEventManager>().screenView();
-locator<MyEventManager>().onTapContinue(vehicleId);
+miscellaneous: EventMiscellaneous()
+    .addMiscellaneous('vehicle_id', vehicleId)
+    .addMiscellaneous('plan_name', planName)
+    .build()
+// → "vehicle_id:V123::plan_name:Gold"
 ```
+
+### NEVER:
+- Use `EventDTO` object — use `super.sendEvent(named params)` directly
+- Extend `BaseEventManager` — extend `WeLyticsEventManagerV2`
+- Pass `EventDispatcherV2()` in constructor — pass only `targetProduct`
+- Register EventManager in `locator.dart` / GetIt — use static singleton `instance`
+- Use `locator<MyEventManager>()` — use `MyEventManager.instance`
+- Fire `screen_view` in `build()` or `BlocListener` — always in `initState()`
+- Fire events from BLoC — always from UI layer (screen, widget)
+- Use `vehicleId` (lowercase d) — parameter is `vehicleID` (capital D)
 
 ---
 
@@ -691,7 +697,7 @@ When building any new feature, verify every item:
 - [ ] API → Retrofit service → Repository impl → UseCase
 - [ ] Models → Manual `fromJson`/`toJson`
 - [ ] DI → Register in `locator.dart`
-- [ ] Analytics → `EventDTO` via `EventManager`
+- [ ] Analytics → `WeLyticsEventManagerV2` singleton via `.instance`
 - [ ] Errors → `ShowSnackBarState` → `SnackBars(...).show(context)`
 - [ ] Architecture → presentation / domain / data folders
 - [ ] Common widgets → check `we_common_widgets` and `we_op_common` first

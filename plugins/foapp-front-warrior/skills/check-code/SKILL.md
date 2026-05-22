@@ -87,8 +87,8 @@ Check each rule below. For every violation found, report: file, line number (if 
 
 ### Rule 12: Analytics (severity: INFO)
 **Violation:** New screen without screen_view event, new button without click event
-**Check:** Look for screens missing EventDTO with screen_view, buttons missing event tracking
-**Fix:** Create EventManager with appropriate event constants
+**Check:** Look for screens missing `MyEventManager.instance.screenView()` in initState, buttons missing click event tracking
+**Fix:** Create EventManager extending `WeLyticsEventManagerV2` with static singleton pattern. Use `super.sendEvent(named params)` — NOT `EventDTO`. Register via `static final instance` — NOT GetIt locator
 
 ### Rule 13: Tap handling — WeInkWell (severity: ERROR)
 **Violation:** `GestureDetector(onTap:` used for simple tap handling
@@ -124,7 +124,7 @@ Present results grouped by severity:
 
 ### ℹ️ INFO (consider)
 4. **views/munshi_screen.dart** — No screen_view analytics event found
-   → Add EventDTO with EventName.screen_view
+   → Add MyEventManager.instance.screenView() in initState
 
 ### Summary
 - Files checked: 8

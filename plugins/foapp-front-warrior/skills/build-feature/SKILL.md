@@ -217,7 +217,7 @@ Once approved, generate code file by file. For EACH file:
 
 **DI:** Register in `locator.dart` using GetIt. Check `isRegistered` before registering.
 
-**Analytics:** `EventDTO` via `EventManager`. Define event constants in feature analytics file.
+**Analytics:** `WeLyticsEventManagerV2` with static singleton pattern. Use `super.sendEvent(named params)`, NOT `EventDTO`. Define event constants in feature's `analytics/` directory. Usage: `MyEventManager.instance.method()` — NOT `locator<>()`.
 
 **Errors:** Emit `ShowSnackBarState` from BLoC, show via `SnackBars(message:).show(context)` in BlocListener.
 

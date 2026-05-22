@@ -6,7 +6,7 @@ description: >
   or provides an events spreadsheet/list for a feature. Generates EventManager, EventName/
   EventCategory constants, and places events at correct locations in screens and BLoC.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Add Events — Analytics Integration for Flutter + Android Features
@@ -22,7 +22,7 @@ Add analytics events to an existing feature by generating all required infrastru
 Ask the developer for (skip any already provided):
 
 1. **Events sheet** — any of:
-   - CSV or Excel file (columns: `screen_name`, `event_name`, `event_action`, `event_category`, `miscellaneous_keys`)
+   - CSV or Excel file (columns: `screen_name`, `event_name`, `event_action`, `event_category`, `user_screen`, `miscellaneous_keys`)
    - A table copied from Confluence or a Google Sheet
    - A plain list of events with their properties
 2. **Feature name** — short identifier like `ask-munshi`, `fuel-guard`, `fastag-recharge`
@@ -60,17 +60,16 @@ class AskMunshiEventManager extends WeLyticsEventManagerV2 {
     );
   }
 
-  void onSendMessage({String? vehicleId, String? messageType}) {
+  void onSendMessage({String? vehicleId, String? messageType, String? userScreen}) {
     super.sendEvent(
-      eventName: AskMunshiEventName.sendBtn,
+      eventName: EventName.sendBtn,
       screenName: ScreenName.askMunshiScreen,
       eventAction: CoreEventAction.click,
       vehicleID: vehicleId,
-      miscellaneous: messageType != null
-          ? EventMiscellaneous()
-              .addMiscellaneous('message_type', messageType)
-              .build()
-          : null,
+      miscellaneous: EventMiscellaneous()
+          .addMiscellaneous('message_type', messageType)
+          .addMiscellaneous('user_screen', userScreen)
+          .build(),
     );
   }
 }
@@ -81,7 +80,7 @@ class AskMunshiEventManager extends WeLyticsEventManagerV2 {
 // WRONG — locator registration is NOT used for EventManagers
 locator.registerSingleton<AskMunshiEventManager>(AskMunshiEventManager());
 
-// WRONG — BaseEventManager is NOT directly extended
+// WRONG — BaseEventManager is NOT directly extended by your feature class
 class AskMunshiEventManager extends BaseEventManager { ... }
 
 // WRONG — EventDispatcherV2 is NOT passed in constructor
@@ -96,6 +95,7 @@ AskMunshiEventManager() : super(targetProduct: 'chatbot', dispatcher: EventDispa
 | `WeLyticsEventManager` | `package:we_base/we_lytics_manager.dart` | Fuel Guard, Khata, Buy-Sell (older) |
 
 Both are defined in `packages/we_base/lib/src/analytics/we_lytics.dart`.
+`WeLyticsEventManagerV2` internally extends `BaseEventManager` and passes `EventDispatcherV2()` — you do NOT pass it yourself.
 
 ### Rule 2: sendEvent API — Named parameters (NOT EventDTO object)
 
@@ -110,25 +110,57 @@ super.sendEvent(
   vehicleID: vehicleId,                    // String? optional (note: capital D)
   miscellaneous: miscString,               // String? optional
   entity: entityId,                        // String? optional (ticket ID, order ID, etc.)
+  refId: referenceId,                      // String? optional (reference identifier)
 );
 ```
 
 **Important:** The parameter is `vehicleID` (capital D), not `vehicleId`.
 
-### Rule 3: EventName constants — Static const in a class
+### Rule 3: Constant class naming — Two valid patterns
 
+Check the existing feature's pattern. If the feature already has constants, follow that pattern. For new features, either pattern is valid:
+
+**Pattern A — Non-prefixed (GPS Route style, recommended for larger features):**
+```dart
+// event_name.dart
+class EventName {
+  static const screenView = 'screen_view';
+  static const sendBtn = 'send_btn';
+  static const viewLiveBtn = 'view_live_btn';
+}
+
+// screen_name.dart
+class ScreenName {
+  static const askMunshiScreen = 'ask_munshi_screen';
+  static const munshiHistoryScreen = 'munshi_history_screen';
+}
+
+// event_category.dart
+class EventCategory {
+  static const chatInput = 'chat_input';
+  static const historyList = 'history_list';
+}
+```
+
+**Pattern B — Prefixed (for smaller features to avoid name collisions):**
 ```dart
 class AskMunshiEventName {
   static const screenView = 'screen_view';
   static const sendBtn = 'send_btn';
-  static const attachmentBtn = 'attachment_btn';
-  static const suggestionTap = 'suggestion_tap';
-  static const historyItemTap = 'history_item_tap';
-  static const retryBtn = 'retry_btn';
+}
+
+class AskMunshiScreenName {
+  static const askMunshiScreen = 'ask_munshi_screen';
+}
+
+class AskMunshiEventCategory {
+  static const askMunshiScreen = 'ask_munshi_screen';
 }
 ```
 
-Naming rules:
+**CRITICAL — pick ONE pattern and use it consistently across all constant classes AND the EventManager.**
+
+EventName value naming rules:
 - All values are **snake_case** strings
 - `screen_view` is universal — always `'screen_view'`
 - Buttons: `*_btn` suffix (`send_btn`, `submit_btn`, `retry_btn`)
@@ -136,29 +168,25 @@ Naming rules:
 - Other clicks: `*_click` suffix (`filter_click`, `tab_click`)
 - Actions: verb + noun (`load_more`, `scroll_end`, `filter_applied`)
 
-### Rule 4: EventCategory constants
+### Rule 4: ScreenName and EventCategory — One per screen
 
 ```dart
-class AskMunshiEventCategory {
+// One ScreenName constant per distinct screen
+class ScreenName {
+  static const askMunshiScreen = 'ask_munshi_screen';
+  static const munshiHistoryScreen = 'munshi_history_screen';
+}
+
+// One EventCategory constant per distinct screen (often same values as ScreenName)
+class EventCategory {
   static const askMunshiScreen = 'ask_munshi_screen';
   static const munshiHistoryScreen = 'munshi_history_screen';
 }
 ```
 
-One category per distinct screen. Use snake_case.
+Use snake_case for all values.
 
-### Rule 5: ScreenName constants
-
-```dart
-class AskMunshiScreenName {
-  static const askMunshiScreen = 'ask_munshi_screen';
-  static const munshiHistoryScreen = 'munshi_history_screen';
-}
-```
-
-Or add to existing feature's `ScreenName` class if one exists.
-
-### Rule 6: File placement
+### Rule 5: File placement
 
 ```
 feature/
@@ -171,7 +199,7 @@ feature/
 
 Some features keep all constants in a single file. Check existing pattern in the feature before creating separate files.
 
-### Rule 7: Calling events from UI
+### Rule 6: Calling events from UI
 
 **screen_view — ALWAYS in initState:**
 ```dart
@@ -179,7 +207,7 @@ Some features keep all constants in a single file. Check existing pattern in the
 void initState() {
   super.initState();
   AskMunshiEventManager.instance.screenView(
-    screenName: AskMunshiScreenName.askMunshiScreen,
+    screenName: ScreenName.askMunshiScreen,
     vehicleId: widget.vehicleId,
   );
 }
@@ -190,7 +218,10 @@ void initState() {
 WEFlatButtonV2.primary(
   title: WeLangKeysStore.instance.send.string(context),
   onTap: () {
-    AskMunshiEventManager.instance.onSendMessage(messageType: 'text');
+    AskMunshiEventManager.instance.onSendMessage(
+      messageType: 'text',
+      userScreen: widget.sourceScreen,
+    );
     context.read<AskMunshiBloc>().add(SendMessageEvent(message));
   },
 )
@@ -213,6 +244,76 @@ WeInkWell(
 - Fire screen_view in `build()` or `BlocListener` — always in `initState()`
 - Exception: popup/bottom sheet "view" events fire in the callback that opens them
 
+### Rule 7: user_screen — Source screen tracking
+
+If the events sheet has a `user_screen` column, it means this feature/widget can be opened from multiple places in the app. The `user_screen` value identifies **where the user came from** (the source screen).
+
+**How it works:**
+- The source screen passes its screen name when launching the feature
+- The feature receives it as a constructor parameter (e.g., `widget.sourceScreen`)
+- Every event from this feature includes `user_screen` in `miscellaneous` so analytics can track which entry point the user used
+
+**Implementation pattern:**
+
+1. **Screen constructor receives the source screen:**
+```dart
+class AskMunshiScreen extends StatefulWidget {
+  final String? vehicleId;
+  final String? sourceScreen;  // ← where user came from
+
+  const AskMunshiScreen({
+    super.key,
+    this.vehicleId,
+    this.sourceScreen,
+  });
+}
+```
+
+2. **EventManager methods accept `userScreen` parameter:**
+```dart
+void onSendMessage({String? vehicleId, String? messageType, String? userScreen}) {
+  super.sendEvent(
+    eventName: EventName.sendBtn,
+    screenName: ScreenName.askMunshiScreen,
+    eventAction: CoreEventAction.click,
+    vehicleID: vehicleId,
+    miscellaneous: EventMiscellaneous()
+        .addMiscellaneous('message_type', messageType)
+        .addMiscellaneous('user_screen', userScreen)
+        .build(),
+  );
+}
+```
+
+3. **UI passes `widget.sourceScreen` to every event call:**
+```dart
+AskMunshiEventManager.instance.onSendMessage(
+  messageType: 'text',
+  userScreen: widget.sourceScreen,  // ← passed to miscellaneous
+);
+```
+
+4. **Caller passes its screen name when navigating to this feature:**
+```dart
+// From Dashboard
+WeNavigator.push(context,
+  routeName: '/ask-munshi',
+  arguments: {'sourceScreen': 'dashboard_screen'},
+);
+
+// From Vehicle Details
+WeNavigator.push(context,
+  routeName: '/ask-munshi',
+  arguments: {'sourceScreen': 'vehicle_details_screen'},
+);
+```
+
+**Rules:**
+- `user_screen` is always a `miscellaneous` key — it is NOT a `sendEvent` parameter
+- Pass `null` for `userScreen` if the sheet does not have a `user_screen` column for this feature
+- If `user_screen` is present for ANY event in the sheet, add the `sourceScreen` constructor param to the screen widget and pass it in ALL events for that screen
+- The value of `user_screen` is always a snake_case screen name string (e.g., `'dashboard_screen'`, `'vehicle_details_screen'`)
+
 ### Rule 8: Miscellaneous data — Use EventMiscellaneous builder
 
 ```dart
@@ -226,20 +327,21 @@ miscellaneous: EventMiscellaneous()
 miscellaneous: EventMiscellaneous()
     .addMiscellaneous('vehicle_id', vehicleId)
     .addMiscellaneous('plan_name', planName)
-    .addMiscellaneous('tab_type', tabType)
+    .addMiscellaneous('user_screen', userScreen)
     .build()
-// → "vehicle_id:V123::plan_name:Gold::tab_type:active"
+// → "vehicle_id:V123::plan_name:Gold::user_screen:dashboard_screen"
 ```
 
 The `EventMiscellaneous` class is available in some features locally. If not present, use inline string format:
 ```dart
-miscellaneous: 'vehicle_id:$vehicleId::plan_name:$planName'
+miscellaneous: 'vehicle_id:$vehicleId::plan_name:$planName::user_screen:$userScreen'
 ```
 
 **Rules:**
 - Format: `key:value::key:value` (colon between key-value, double-colon between pairs)
 - Pass `null` when no extra data — never pass empty string `""`
 - Keep it concise — Android side has 100 char limit and lowercases everything
+- `user_screen` is a miscellaneous key, not a sendEvent parameter
 
 ### Rule 9: CoreEventAction values
 
@@ -293,11 +395,12 @@ WeLyticUtil.logScreenViewWithVehicleId(
     PlayItineraryActivity::class.java
 )
 
-// Button click event
+// Button click event with user_screen in miscellaneous
 WeLytic1.Builder(EventAction.CLICK, EventCategory.CHAT_INPUT, ScreenName.ASK_MUNSHI)
     .miscellaneous(
         WeLyticMiscellaneous.Builder()
             .addMiscellaneous("message_type", messageType)
+            .addMiscellaneous("user_screen", lastVisitedScreen)
             .build()
     )
     .vehicleId(vehicleId)
@@ -319,9 +422,21 @@ WeLytic1.Builder(EventAction.CLICK, EventCategory.CHAT_INPUT, ScreenName.ASK_MUN
 ```kotlin
 val misc = WeLyticMiscellaneous.Builder()
     .addMiscellaneous("vehicle_id", vehicleId)
-    .addMiscellaneous("plan_name", planName)
+    .addMiscellaneous("user_screen", getLastVisitedScreen())
     .build()
-// → "vehicle_id:v123::plan_name:gold" (lowercased, max 100 chars)
+// → "vehicle_id:v123::user_screen:dashboard_screen" (lowercased, max 100 chars)
+```
+
+### Android user_screen pattern
+
+On Android, `user_screen` is typically retrieved via `getLastVisitedScreen()` from `AppUtility`:
+```kotlin
+put("userScreen", getLastVisitedScreen())
+```
+
+The Android `ReportEventScreen` pattern uses `userScreen` as a DSL helper:
+```kotlin
+val userScreen by lazy { basicCategoryFunc("", getLastVisitedScreen(), "gps") }
 ```
 
 ---
@@ -332,13 +447,15 @@ val misc = WeLyticMiscellaneous.Builder()
 
 Read the provided events sheet. Build an internal table:
 
-| screen_name | event_name | event_action | event_category | miscellaneous_keys |
-|---|---|---|---|---|
+| screen_name | event_name | event_action | event_category | user_screen | miscellaneous_keys |
+|---|---|---|---|---|---|
 
 If `event_action` is missing, infer:
 - `screen_view` → `view`
 - Any `_btn` / `_tap` / `_click` suffix → `click`
 - Filter, scroll, tab → `scroll` or `engagement`
+
+If `user_screen` column is present with values, note that the feature needs a `sourceScreen` constructor parameter and all events must include `user_screen` in miscellaneous.
 
 ### Step 2 — Map events to screens
 
@@ -347,13 +464,15 @@ Group events by `screen_name`. Show mapping table for approval:
 ```
 Screen: ask_munshi_screen
   - screen_view (view) → initState
-  - send_btn (click) → Send button onTap
-  - attachment_btn (click) → Attachment button onTap
+  - send_btn (click) → Send button onTap [user_screen in misc]
+  - attachment_btn (click) → Attachment button onTap [user_screen in misc]
 
 Screen: munshi_history_screen
   - screen_view (view) → initState
   - history_item_tap (click) → List item onTap
 ```
+
+If `user_screen` is present, mark it clearly: `[user_screen: sourceScreen passed via constructor]`
 
 **Wait for developer approval before generating code.**
 
@@ -362,6 +481,7 @@ Screen: munshi_history_screen
 Scan the feature directory for:
 - Any existing `*event_manager.dart`, `*event_name.dart`, `analytics/` directory
 - Any existing EventManager class that extends `WeLyticsEventManagerV2` or `WeLyticsEventManager`
+- Which naming pattern is used: non-prefixed (`EventName`) or prefixed (`FeatureEventName`)
 
 Report: "Found existing XEventManager — will extend" or "No existing infra — creating from scratch"
 
@@ -381,6 +501,7 @@ Create with **static singleton pattern**:
 - Constructor passes only `targetProduct` to super
 - One method per event — uses `super.sendEvent(named params)`
 - Uses `EventMiscellaneous` builder for miscellaneous data
+- If `user_screen` is needed, each method takes `String? userScreen` param and includes it in miscellaneous
 
 ### Step 7 — Place events in UI code
 
@@ -390,8 +511,13 @@ For each event, show **exact code change** with line numbers:
 File: lib/features/ask_munshi/presentation/views/ask_munshi_screen.dart
 Location: initState method (after super.initState())
 Add: AskMunshiEventManager.instance.screenView(
-       screenName: AskMunshiScreenName.askMunshiScreen);
+       screenName: ScreenName.askMunshiScreen);
 ```
+
+If `user_screen` is needed, also show:
+- Adding `sourceScreen` param to the screen's constructor
+- Passing `userScreen: widget.sourceScreen` in every event call
+- Updating the navigation call at the caller side to pass `sourceScreen`
 
 Use the `Read` tool to find exact insertion points.
 
@@ -401,6 +527,7 @@ For hybrid features, also generate:
 - Constants in feature module's analytics directory
 - `WeLytic1.Builder` calls in Activities/Fragments
 - `WeLyticUtil.logScreenView` calls for screen views
+- `user_screen` via `getLastVisitedScreen()` in miscellaneous (Android pattern)
 
 ### Step 9 — Compliance check
 
@@ -409,20 +536,22 @@ Verify:
 - [ ] Every `WEFlatButtonV2` and `WeInkWell` `onTap` has a click event
 - [ ] All event names are snake_case
 - [ ] EventManager uses singleton pattern (not locator)
-- [ ] EventManager extends `WeLyticsEventManagerV2` (not BaseEventManager)
+- [ ] EventManager extends `WeLyticsEventManagerV2` (not BaseEventManager directly)
 - [ ] `sendEvent` uses named parameters (not EventDTO)
 - [ ] `vehicleID` parameter spelled with capital D
 - [ ] `miscellaneous` is `null` (not `""`) when no extra data
 - [ ] screen_view fired in `initState()` (not build/BlocListener)
 - [ ] Events fired from UI layer only (not from BLoC)
 - [ ] `screenName` consistent across all events for same screen
+- [ ] Constant class naming is consistent (all prefixed OR all non-prefixed)
+- [ ] If `user_screen` in sheet → `sourceScreen` constructor param exists + passed in all events
 
 ---
 
 ## Rules Summary
 
 1. EventManager uses **static singleton** — NOT GetIt locator
-2. Extends **`WeLyticsEventManagerV2`** — NOT `BaseEventManager`
+2. Extends **`WeLyticsEventManagerV2`** — NOT `BaseEventManager` directly
 3. Constructor passes only **`targetProduct`** — NOT `EventDispatcherV2()`
 4. `sendEvent` uses **named parameters** — NOT `EventDTO` object
 5. Usage: **`MyEventManager.instance.method()`** — NOT `locator<MyEventManager>()`
@@ -432,13 +561,15 @@ Verify:
 9. `vehicleID` with **capital D** in sendEvent parameter
 10. Flutter events **forward to Android** → Firebase + CleverTap (shared namespace)
 11. All events get **`v1_` prefix** automatically on Android side
+12. Constant class naming — **pick one pattern** (prefixed or non-prefixed) and use consistently
+13. `user_screen` — passed as **miscellaneous key**, NOT a sendEvent parameter. Feature receives source screen via constructor, passes to all events
 
 ---
 
 ## Output
 
 ### Deliverable 1 — Event mapping table (approval gate)
-Table showing every event mapped to screen and trigger location. **Get approval first.**
+Table showing every event mapped to screen and trigger location. Mark `user_screen` events clearly. **Get approval first.**
 
 ### Deliverable 2 — Generated files
 - `analytics/event_name.dart` — EventName constants
@@ -447,19 +578,23 @@ Table showing every event mapped to screen and trigger location. **Get approval 
 
 ### Deliverable 3 — UI placement instructions
 For each event: file path, method, exact lines to add with surrounding context.
+If `user_screen` is present: include constructor param addition + caller-side navigation update.
 
 ### Deliverable 4 — Compliance report
-Checklist confirming all 11 rules satisfied.
+Checklist confirming all 13 rules satisfied.
 
 ---
 
 ## Reference — Real examples from codebase
 
-**GPS Route EventManager** (best reference for V2 pattern):
+**GPS Route EventManager** (best reference for V2 pattern — non-prefixed naming):
 `apps/gps_route/lib/gps_route/analytics/event_manager.dart`
 
-**GPS EventName** (200+ constants):
+**GPS EventName** (200+ constants — non-prefixed `EventName`):
 `apps/gps_route/lib/gps_route/analytics/event_name.dart`
+
+**GPS ScreenName** (94 constants):
+`apps/gps_route/lib/gps_route/analytics/screen_name.dart`
 
 **GPS EventCategory** (100+ constants):
 `apps/gps_route/lib/gps_route/analytics/event_category.dart`
@@ -470,5 +605,9 @@ Checklist confirming all 11 rules satisfied.
 **EventMiscellaneous builder**:
 `apps/lubricants/lib/lubricants/analytics/event_miscellaneous.dart`
 
-**EventDispatcher V1/V2 definitions**:
+**EventDispatcher V1/V2 + BaseEventManager definitions**:
 `packages/we_base/lib/src/analytics/we_lytics.dart`
+
+**Android user_screen pattern**:
+`OperatorApp/.../utils/AppUtility.kt` — `getLastVisitedScreen()`
+`OperatorApp/.../gpsReporting/analytics/ReportEventScreen.kt` — `userScreen` DSL helper
