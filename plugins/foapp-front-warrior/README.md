@@ -11,7 +11,7 @@ This plugin gives Claude deep understanding of your **dual-repo hybrid monorepo*
 
 It knows your widgets (Flutter + Android custom views), colors, text styles, navigation patterns, BLoC conventions, API structures, MethodChannel bridges, and migration status — so every line of generated code follows your team's rules on both platforms.
 
-## Skills
+## 9 Skills
 
 | Skill | What it does |
 |-------|-------------|
@@ -20,6 +20,10 @@ It knows your widgets (Flutter + Android custom views), colors, text styles, nav
 | `/check-code` | Validate any code against conventions — Dart, Kotlin, AND cross-platform bridge consistency |
 | `/explain-flow` | Understand how any feature works — screens, BLoCs, Activities, ViewModels, APIs, MethodChannel bridges |
 | `/find-widget` | Search for existing widgets and design tokens in BOTH repos before creating new ones |
+| `/fix-bug` | Fix bugs with minimal diff — scoped changes only, no refactoring, 6 bug categories (UI, State, API, Bridge, Navigation, Crash) |
+| `/add-events` | Add analytics events from a sheet or requirements — generates EventManager, constants, locator registration, and places events in UI |
+| `/optimize` | Post-work optimization report — widget rebuilds, memory, API, code duplication across Flutter + Android |
+| `/upgrade` | Upgrade Android SDK, Flutter, Kotlin, Gradle, or packages — compatibility check, migration plan, rollback commands |
 
 ## Setup
 
@@ -47,7 +51,9 @@ No external APIs, databases, or cloud services needed. Everything runs locally.
 4. Dev approves → Claude generates code following all conventions (both platforms)
 5. Auto-compliance check runs → violations auto-fixed (Dart + Kotlin + bridge consistency)
 6. Dev reviews generated code → requests any changes
-7. Done — production-ready code following all team rules across both repos
+7. Run /add-events with analytics sheet → events placed at correct locations
+8. Run /optimize → check for performance issues in generated code
+9. Done — production-ready code following all team rules across both repos
 ```
 
 ## Architecture
@@ -56,9 +62,9 @@ No external APIs, databases, or cloud services needed. Everything runs locally.
 Android (OperatorApp)          MethodChannel Bridge           Flutter (OperatorAppFlutter)
 ┌──────────────────┐     ┌──────────────────────────┐     ┌──────────────────────┐
 │ Activities       │     │ COMMUNICATION_WITH_       │     │ Screens (views/)     │
-│ Fragments        │────►│   NATIVE_APP              │────►│ BLoCs (bloc/)        │
+│ Fragments        │────>│   NATIVE_APP              │────>│ BLoCs (bloc/)        │
 │ ViewModels       │     │ COMMUNICATION_WITH_       │     │ API Services         │
-│ Adapters         │◄────│   ACTIVITY                │◄────│ Repositories         │
+│ Adapters         │<────│   ACTIVITY                │<────│ Repositories         │
 │ FlutterAppManger │     │ FlutterActionProviders    │     │ NativeActionInvokers │
 └──────────────────┘     └──────────────────────────┘     └──────────────────────┘
 ```

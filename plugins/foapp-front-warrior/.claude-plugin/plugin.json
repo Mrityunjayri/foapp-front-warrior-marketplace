@@ -1,15 +1,20 @@
 {
   "name": "foapp-front-warrior",
-  "version": "0.2.0",
-  "description": "AI-powered frontend development assistant for WheelsEye OperatorApp hybrid (Android Kotlin + Flutter). Scans both repos, maps MethodChannel bridges, tracks migration status, enforces coding conventions on both platforms, and generates compliant code from PRDs and Figma designs.",
+  "version": "0.3.0",
+  "description": "AI-powered frontend development assistant for WheelsEye OperatorApp hybrid (Android Kotlin + Flutter). 9 skills: sync repos, build features from PRD+Figma, validate code conventions, trace flows, find widgets, fix bugs with minimal diff, add analytics events, optimize code, and upgrade platforms/packages.",
   "author": {
     "name": "WheelsEye Engineering"
   },
   "keywords": [
     "flutter",
     "android",
+    "kotlin",
     "code-generation",
     "conventions",
+    "bug-fix",
+    "analytics",
+    "optimization",
+    "upgrade",
     "operator-app",
     "wheelseye"
   ]

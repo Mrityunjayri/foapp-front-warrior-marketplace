@@ -5,7 +5,7 @@
     {
       "name": "foapp-front-warrior",
       "description": "AI-powered frontend assistant for OperatorApp hybrid (Android + Flutter). Scans both repos, maps MethodChannel bridges, enforces conventions, generates code from PRDs + Figma.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "path": "./plugins/foapp-front-warrior"
     }
   ]
