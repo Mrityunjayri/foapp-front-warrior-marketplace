@@ -3,15 +3,17 @@ name: add-events
 description: >
   Add analytics events to a feature from an events sheet or requirements. Use when the user
   says "add events", "add analytics", "integrate tracking", "event sheet", "add screen_view",
-  or provides an events spreadsheet/list for a feature. Generates EventManager, EventDTO
-  constants, and places events at correct locations in screens and BLoC.
+  or provides an events spreadsheet/list for a feature. Generates EventManager, EventName/
+  EventCategory constants, and places events at correct locations in screens and BLoC.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Add Events — Analytics Integration for Flutter + Android Features
 
-Add Firebase analytics events to an existing feature by generating all required infrastructure: `EventName` constants, `EventCategory` constants, a typed `EventManager` class, locator registration, and placement calls inside screens and BLoC. Works for both the **Flutter** (OperatorAppFlutter) and **Android** (OperatorApp / WeLytic) sides of the hybrid app.
+Add analytics events to an existing feature by generating all required infrastructure. Works for both **Flutter** (OperatorAppFlutter) and **Android** (OperatorApp) sides of the hybrid app.
+
+**CRITICAL:** Flutter analytics events are NOT independent — they forward to Android via MethodChannel (`eventTrigger` callback) → `WeLyticFromWeb` → Firebase + CleverTap. Both platforms share the same Firebase project and `v1_`-prefixed event namespace.
 
 ---
 
@@ -20,362 +22,453 @@ Add Firebase analytics events to an existing feature by generating all required 
 Ask the developer for (skip any already provided):
 
 1. **Events sheet** — any of:
-   - CSV or Excel file pasted/attached (columns: `screen_name`, `event_name`, `event_action`, `event_category`, `miscellaneous_keys`)
+   - CSV or Excel file (columns: `screen_name`, `event_name`, `event_action`, `event_category`, `miscellaneous_keys`)
    - A table copied from Confluence or a Google Sheet
    - A plain list of events with their properties
 2. **Feature name** — short identifier like `ask-munshi`, `fuel-guard`, `fastag-recharge`
-3. **Feature directory path** — location of the feature in `apps/` (e.g., `apps/operator-app/lib/features/ask_munshi/`)
-4. **targetProduct** — the product string used in all events for this feature (e.g., `gps`, `fastag`, `fuel`, `buy_sell`, `khata`, `chatbot`)
+3. **Feature directory path** — location in `apps/` (e.g., `apps/gps_route/lib/gps_route/`)
+4. **targetProduct** — product string: `gps`, `fastag`, `fuel`, `buy_sell`, `khata`, `chatbot`, etc.
 5. **Platform** — `Flutter`, `Android`, or `Both`
 
 If the events sheet is missing, ask: "Please share the events sheet (CSV, table, or list) for this feature."
 
 ---
 
-## Event Infrastructure Rules
+## Flutter Event Infrastructure Rules
 
-These rules are **mandatory** for all events in OperatorAppFlutter. Every generated file must follow them exactly.
+These rules are derived from **actual repo patterns** (GPS Route, Fuel Guard, Buy-Sell, Khata as references). Every generated file must follow them exactly.
 
-### 1. File placement
+### Rule 1: EventManager class — Singleton pattern (NOT GetIt locator)
 
-All event constants and the `EventManager` for a feature live in a dedicated analytics file inside the feature's `presentation/` or root layer:
+EventManagers use **static singleton pattern** — they are NOT registered in `locator.dart` / GetIt.
+
+**V2 pattern (for all new features):**
+```dart
+import 'package:we_base/we_lytics_manager.dart';
+
+class AskMunshiEventManager extends WeLyticsEventManagerV2 {
+  static final AskMunshiEventManager instance = AskMunshiEventManager._();
+
+  AskMunshiEventManager._() : super(targetProduct: 'chatbot');
+
+  void screenView({String? vehicleId, required String screenName}) {
+    super.sendEvent(
+      eventName: EventName.screenView,
+      screenName: screenName,
+      eventAction: CoreEventAction.view,
+      vehicleID: vehicleId,
+    );
+  }
+
+  void onSendMessage({String? vehicleId, String? messageType}) {
+    super.sendEvent(
+      eventName: AskMunshiEventName.sendBtn,
+      screenName: ScreenName.askMunshiScreen,
+      eventAction: CoreEventAction.click,
+      vehicleID: vehicleId,
+      miscellaneous: messageType != null
+          ? EventMiscellaneous()
+              .addMiscellaneous('message_type', messageType)
+              .build()
+          : null,
+    );
+  }
+}
+```
+
+**NEVER do this:**
+```dart
+// WRONG — locator registration is NOT used for EventManagers
+locator.registerSingleton<AskMunshiEventManager>(AskMunshiEventManager());
+
+// WRONG — BaseEventManager is NOT directly extended
+class AskMunshiEventManager extends BaseEventManager { ... }
+
+// WRONG — EventDispatcherV2 is NOT passed in constructor
+AskMunshiEventManager() : super(targetProduct: 'chatbot', dispatcher: EventDispatcherV2());
+```
+
+**Two versions exist — use V2 for new features:**
+
+| Class | Import | Used by |
+|-------|--------|---------|
+| `WeLyticsEventManagerV2` | `package:we_base/we_lytics_manager.dart` | GPS Route, Buy Flow, Offline DashCam (modern) |
+| `WeLyticsEventManager` | `package:we_base/we_lytics_manager.dart` | Fuel Guard, Khata, Buy-Sell (older) |
+
+Both are defined in `packages/we_base/lib/src/analytics/we_lytics.dart`.
+
+### Rule 2: sendEvent API — Named parameters (NOT EventDTO object)
+
+The `sendEvent` method uses **named parameters**, not an `EventDTO` object:
+
+```dart
+super.sendEvent(
+  eventName: EventName.screenView,        // required String
+  screenName: ScreenName.askMunshiScreen,  // required String
+  eventAction: CoreEventAction.click,      // String, defaults to 'click'
+  eventCategory: EventCategory.chatInput,  // String? optional
+  vehicleID: vehicleId,                    // String? optional (note: capital D)
+  miscellaneous: miscString,               // String? optional
+  entity: entityId,                        // String? optional (ticket ID, order ID, etc.)
+);
+```
+
+**Important:** The parameter is `vehicleID` (capital D), not `vehicleId`.
+
+### Rule 3: EventName constants — Static const in a class
+
+```dart
+class AskMunshiEventName {
+  static const screenView = 'screen_view';
+  static const sendBtn = 'send_btn';
+  static const attachmentBtn = 'attachment_btn';
+  static const suggestionTap = 'suggestion_tap';
+  static const historyItemTap = 'history_item_tap';
+  static const retryBtn = 'retry_btn';
+}
+```
+
+Naming rules:
+- All values are **snake_case** strings
+- `screen_view` is universal — always `'screen_view'`
+- Buttons: `*_btn` suffix (`send_btn`, `submit_btn`, `retry_btn`)
+- List item taps: `*_tap` suffix (`history_item_tap`, `vehicle_card_tap`)
+- Other clicks: `*_click` suffix (`filter_click`, `tab_click`)
+- Actions: verb + noun (`load_more`, `scroll_end`, `filter_applied`)
+
+### Rule 4: EventCategory constants
+
+```dart
+class AskMunshiEventCategory {
+  static const askMunshiScreen = 'ask_munshi_screen';
+  static const munshiHistoryScreen = 'munshi_history_screen';
+}
+```
+
+One category per distinct screen. Use snake_case.
+
+### Rule 5: ScreenName constants
+
+```dart
+class AskMunshiScreenName {
+  static const askMunshiScreen = 'ask_munshi_screen';
+  static const munshiHistoryScreen = 'munshi_history_screen';
+}
+```
+
+Or add to existing feature's `ScreenName` class if one exists.
+
+### Rule 6: File placement
 
 ```
 feature/
 └── analytics/
-    ├── <feature>_event_constants.dart   // EventName + EventCategory constants
-    └── <feature>_event_manager.dart     // EventManager class
+    ├── event_manager.dart         // EventManager class (singleton)
+    ├── event_name.dart            // EventName constants
+    ├── event_category.dart        // EventCategory constants
+    └── screen_name.dart           // ScreenName constants (or in event_name.dart)
 ```
 
-If the feature has an existing `analytics/` directory, **extend** what is there — do not create duplicates.
+Some features keep all constants in a single file. Check existing pattern in the feature before creating separate files.
 
-### 2. EventName constants
+### Rule 7: Calling events from UI
 
-Defined as a class with `static const String` members. All values are **snake_case**. Common names:
-
-| Constant | Value | When to fire |
-|----------|-------|--------------|
-| `screen_view` | `"screen_view"` | When screen becomes visible |
-| `<action>_btn` | `"<action>_btn"` | Button tap (e.g., `submit_btn`, `continue_btn`) |
-| `<element>_click` | `"<element>_click"` | Any tappable element that isn't a button |
-| `<list_item>_tap` | `"<list_item>_tap"` | Tapping a list row |
-| `filter_applied` | `"filter_applied"` | Applying a filter |
-| `tab_switch` | `"tab_switch"` | Switching tabs |
-| `scroll_end` | `"scroll_end"` | Reaching end of a scrollable list |
-
-```dart
-class AskMunshiEventName {
-  static const String screen_view = "screen_view";
-  static const String send_btn = "send_btn";
-  static const String message_tap = "message_tap";
-}
-```
-
-### 3. EventCategory constants
-
-Defined as a class with `static const String` members. Names use **snake_case** and reflect the screen or module:
-
-```dart
-class AskMunshiEventCategory {
-  static const String ask_munshi_screen = 'ask_munshi_screen';
-  static const String munshi_history_screen = 'munshi_history_screen';
-}
-```
-
-One category per distinct screen. If multiple events share a screen, they share the same category constant.
-
-### 4. EventManager class
-
-- Extends `BaseEventManager`
-- Constructor passes `targetProduct` string and `EventDispatcherV2()` to `super`
-- One typed method per event — method name mirrors what happens in the UI (e.g., `onSendMessage`, `screenView`, `onTapHistoryItem`)
-- All `EventDTO` fields populated from parameters where relevant
-
-```dart
-import 'package:we_base/we_base_bridge.dart';
-
-class AskMunshiEventManager extends BaseEventManager {
-  AskMunshiEventManager()
-      : super(
-          targetProduct: 'chatbot',
-          dispatcher: EventDispatcherV2(),
-        );
-
-  void screenView() {
-    sendEvent(EventDTO(
-      eventName: AskMunshiEventName.screen_view,
-      eventAction: CoreEventAction.view,
-      eventCategory: AskMunshiEventCategory.ask_munshi_screen,
-      screenName: 'ask_munshi_screen',
-      targetProduct: targetProduct,
-    ));
-  }
-
-  void onSendMessage({String? vehicleId, String? messageType}) {
-    sendEvent(EventDTO(
-      eventName: AskMunshiEventName.send_btn,
-      eventAction: CoreEventAction.click,
-      eventCategory: AskMunshiEventCategory.ask_munshi_screen,
-      screenName: 'ask_munshi_screen',
-      targetProduct: targetProduct,
-      vehicleId: vehicleId,
-      miscellaneous: messageType != null ? 'message_type:$messageType' : null,
-    ));
-  }
-}
-```
-
-### 5. locator.dart registration
-
-Add `EventManager` as a **singleton** in the feature's `locator.dart`, inside `initializeDependencies`:
-
-```dart
-if (!locator.isRegistered<AskMunshiEventManager>()) {
-  locator.registerSingleton<AskMunshiEventManager>(AskMunshiEventManager());
-}
-```
-
-Registration must come **after** all repository and use-case registrations but **before** the function returns.
-
-### 6. Calling events from UI
-
-| Event type | Where to call |
-|------------|---------------|
-| `screen_view` | `initState` of the screen's `State` class, OR in a `BlocListener` when the initial loaded state is received — whichever is earlier |
-| `click` events | Inside the `onTap` callback of `WEFlatButtonV2`, `WeInkWell`, or list item tap handler |
-| `engagement` events | In the relevant interaction handler (scroll end, tab switch, filter apply) |
-
-**initState pattern:**
+**screen_view — ALWAYS in initState:**
 ```dart
 @override
 void initState() {
   super.initState();
-  locator<AskMunshiEventManager>().screenView();
+  AskMunshiEventManager.instance.screenView(
+    screenName: AskMunshiScreenName.askMunshiScreen,
+    vehicleId: widget.vehicleId,
+  );
 }
 ```
 
-**Button tap pattern:**
+**Button click — in onTap callback:**
 ```dart
 WEFlatButtonV2.primary(
   title: WeLangKeysStore.instance.send.string(context),
   onTap: () {
-    locator<AskMunshiEventManager>().onSendMessage(messageType: 'text');
+    AskMunshiEventManager.instance.onSendMessage(messageType: 'text');
     context.read<AskMunshiBloc>().add(SendMessageEvent(message));
   },
 )
 ```
 
-**BlocListener pattern (for events triggered by state):**
+**WeInkWell tap — in onTap:**
 ```dart
-BlocListener<AskMunshiBloc, AskMunshiState>(
-  listener: (context, state) {
-    if (state is AskMunshiLoaded && state.isFirstLoad) {
-      locator<AskMunshiEventManager>().screenView();
-    }
+WeInkWell(
+  onTap: () {
+    AskMunshiEventManager.instance.onHistoryItemTap(itemId: item.id);
+    // navigation or action...
   },
+  child: HistoryItemWidget(item: item),
 )
 ```
 
-### 7. Miscellaneous data format
+**NEVER:**
+- Call events from BLoC — always from UI layer (screen, widget)
+- Use `locator<EventManager>()` — use `EventManager.instance`
+- Fire screen_view in `build()` or `BlocListener` — always in `initState()`
+- Exception: popup/bottom sheet "view" events fire in the callback that opens them
 
-The `miscellaneous` field in `EventDTO` carries additional key-value data:
-
-- Key-value pair: `"key:value"`
-- Multiple pairs: `"key1:value1::key2:value2"` (double-colon separator)
-- Values must not contain `:` or `::` — sanitize dynamic values if needed
-- Build the string inline or with a helper:
+### Rule 8: Miscellaneous data — Use EventMiscellaneous builder
 
 ```dart
-miscellaneous: 'vehicle_id:$vehicleId::plan_type:$planType::tab:$tabName'
+// Single key
+miscellaneous: EventMiscellaneous()
+    .addMiscellaneous('message_type', messageType)
+    .build()
+// → "message_type:text"
+
+// Multiple keys (chained)
+miscellaneous: EventMiscellaneous()
+    .addMiscellaneous('vehicle_id', vehicleId)
+    .addMiscellaneous('plan_name', planName)
+    .addMiscellaneous('tab_type', tabType)
+    .build()
+// → "vehicle_id:V123::plan_name:Gold::tab_type:active"
 ```
 
-Only include `miscellaneous` when there is meaningful extra context. Do not pass an empty string — pass `null` instead.
+The `EventMiscellaneous` class is available in some features locally. If not present, use inline string format:
+```dart
+miscellaneous: 'vehicle_id:$vehicleId::plan_name:$planName'
+```
 
-### 8. CoreEventAction values
+**Rules:**
+- Format: `key:value::key:value` (colon between key-value, double-colon between pairs)
+- Pass `null` when no extra data — never pass empty string `""`
+- Keep it concise — Android side has 100 char limit and lowercases everything
 
-| Constant | String value | Use for |
-|----------|-------------|---------|
-| `CoreEventAction.view` | `"view"` | Screen appearing, content loaded |
-| `CoreEventAction.click` | `"click"` | Button tap, list item tap |
-| `CoreEventAction.engagement` | `"engagement"` | Scroll, filter, tab switch, search |
+### Rule 9: CoreEventAction values
 
-### 9. screenName convention
+| Constant | String | Use for |
+|----------|--------|---------|
+| `CoreEventAction.view` | `"view"` | Screen appearing, popup shown |
+| `CoreEventAction.click` | `"click"` | Button tap, list item tap (DEFAULT) |
+| `CoreEventAction.scroll` | `"scroll"` | Scroll interactions |
+| `CoreEventAction.engagement` | `"engagement"` | Used in some web modules |
 
-- **snake_case**
-- Matches the feature and screen: `ask_munshi_screen`, `munshi_history_screen`
-- Must be identical across `EventDTO.screenName` and any analytics dashboard definition
-- Do not abbreviate — use the full readable name
+Default action is `click` if not specified.
 
-### 10. eventName convention
+### Rule 10: Event forwarding — Flutter → Android → Firebase
 
-- **snake_case**
-- Suffix `_btn` for buttons, `_tap` for list items, `_click` for other tappable elements
-- Use `screen_view` (never `pageView`, `screenView`, or `page_view`)
-- Prefix with the action verb where helpful: `load_more_btn`, `retry_btn`
+Flutter events are NOT sent directly to Firebase. The dispatch chain is:
+
+```
+Flutter EventManager.sendEvent()
+  → EventDispatcherV2.dispatch()
+    → FireBaseEventsActionInvoker(eventJson).execute()
+      → MethodChannel 'eventTrigger' to Android
+        → FlutterAppManger.eventTrigger(payload)
+          → WeLyticFromWeb.sendEventToFirebaseFromWebView()
+            → Firebase Analytics + CleverTap
+```
+
+This means:
+- All Flutter events appear in Firebase with `v1_` prefix (added by Android side)
+- `screen_view` events from Flutter are routed through `WeLyticUtil.logScreenViewWithVehicleId`
+- Event field names must match Android's `WebEventModel`: `event_name`, `event_action`, `event_category`, `screen_name`, `vehicle_id`, `miscellaneous`, `target_product`, `entity`
 
 ---
 
-## Android (WeLytic) Events
+## Android Event Infrastructure Rules
 
-For the Android side of hybrid features, analytics follow the WeLytic pattern inside `OperatorApp`:
+When adding events on the Android side (for hybrid features or Android-only screens):
 
-- Event tracking calls are placed in `Activity`, `Fragment`, or `ViewModel` methods
-- Use the WeLytic SDK methods present in the existing Android codebase
-- Follow the same `screen_name`, `event_name`, and `miscellaneous` naming conventions as Flutter for consistency
-- Check `references/bridge-map.md` (from `/sync`) to understand if the Flutter EventManager is sufficient or if Android-native tracking is also required for this feature
+### Android EventManager pattern — WeLytic1.Builder
+
+```kotlin
+// Screen view
+WeLyticUtil.logScreenView(
+    WeLyticConstant1.GpsScreenName.SETTINGS_SCREEN,
+    SettingsActivity::class.java
+)
+
+// Screen view with vehicle ID
+WeLyticUtil.logScreenViewWithVehicleId(
+    vehicleId.toString(),
+    WeLyticConstant1.GpsScreenName.PLAY_ROUTE,
+    PlayItineraryActivity::class.java
+)
+
+// Button click event
+WeLytic1.Builder(EventAction.CLICK, EventCategory.CHAT_INPUT, ScreenName.ASK_MUNSHI)
+    .miscellaneous(
+        WeLyticMiscellaneous.Builder()
+            .addMiscellaneous("message_type", messageType)
+            .build()
+    )
+    .vehicleId(vehicleId)
+    .targetProduct("chatbot")
+    .sendEvent(context, "send_btn")
+```
+
+### Android constants location
+
+| Constant type | Location |
+|---|---|
+| Global event names | `welytics/.../WeEventName.kt` |
+| Event actions, categories, screen names | `welytics/.../WeLyticConstant1.kt` |
+| Feature-specific events | Feature module's own `analytics/` directory |
+| Miscellaneous builder | `welytics/.../WeLyticMiscellaneous.kt` |
+
+### Android miscellaneous — WeLyticMiscellaneous.Builder
+
+```kotlin
+val misc = WeLyticMiscellaneous.Builder()
+    .addMiscellaneous("vehicle_id", vehicleId)
+    .addMiscellaneous("plan_name", planName)
+    .build()
+// → "vehicle_id:v123::plan_name:gold" (lowercased, max 100 chars)
+```
 
 ---
 
 ## Process
 
-Follow these steps in order. Show output at each step and wait for developer approval before proceeding.
-
 ### Step 1 — Parse the events sheet
 
 Read the provided events sheet. Build an internal table:
 
-| screen_name | event_name | event_action | event_category | miscellaneous_keys | notes |
-|-------------|------------|--------------|----------------|--------------------|-------|
+| screen_name | event_name | event_action | event_category | miscellaneous_keys |
+|---|---|---|---|---|
 
-If any row is missing `event_action`, infer it:
+If `event_action` is missing, infer:
 - `screen_view` → `view`
-- Any `_btn` or `_tap` or `_click` suffix → `click`
-- Filter, scroll, tab → `engagement`
-
-Flag any ambiguous rows and ask the developer before proceeding.
+- Any `_btn` / `_tap` / `_click` suffix → `click`
+- Filter, scroll, tab → `scroll` or `engagement`
 
 ### Step 2 — Map events to screens
 
-Group events by `screen_name`. For each screen, list:
-- The screen_view event
-- All click events with their trigger location (which button/element)
-- All engagement events
-
-Show the mapping table to the developer for approval. Example output:
+Group events by `screen_name`. Show mapping table for approval:
 
 ```
 Screen: ask_munshi_screen
   - screen_view (view) → initState
   - send_btn (click) → Send button onTap
   - attachment_btn (click) → Attachment button onTap
-  - suggestion_tap (click) → Suggestion chip onTap
 
 Screen: munshi_history_screen
   - screen_view (view) → initState
   - history_item_tap (click) → List item onTap
 ```
 
-**Wait for developer approval before generating any code.**
+**Wait for developer approval before generating code.**
 
-### Step 3 — Check for existing events
+### Step 3 — Check existing event infra
 
 Scan the feature directory for:
-- Any existing `*_event_manager.dart`, `*_event_constants.dart`, or `analytics/` directory
-- Any existing `EventName` or `EventCategory` class in the feature
-- Any existing `EventManager` registration in `locator.dart`
+- Any existing `*event_manager.dart`, `*event_name.dart`, `analytics/` directory
+- Any existing EventManager class that extends `WeLyticsEventManagerV2` or `WeLyticsEventManager`
 
-Read the files with the `Read` tool. Report findings:
-- "Found existing `AskMunshiEventManager` — will extend it with new methods"
-- "No existing analytics infrastructure — will create from scratch"
+Report: "Found existing XEventManager — will extend" or "No existing infra — creating from scratch"
 
 ### Step 4 — Generate EventName constants
 
-Create or update `<feature>_event_constants.dart`:
-- Add only new constants (do not duplicate existing ones)
-- Follow snake_case naming
+Create or update the constants file. Follow existing naming pattern in the feature.
 
-Show the full file content for review.
+### Step 5 — Generate EventCategory + ScreenName constants
 
-### Step 5 — Generate EventCategory constants
-
-Add category constants to the same constants file or the existing one. One constant per screen.
+Add constants. One per screen.
 
 ### Step 6 — Generate EventManager
 
-Create or update `<feature>_event_manager.dart`:
-- One method per event row from the sheet
-- Parameters for any `miscellaneous_keys` columns that have values
-- Null-safe miscellaneous string construction
+Create with **static singleton pattern**:
+- `static final instance = ClassName._()`
+- Extends `WeLyticsEventManagerV2`
+- Constructor passes only `targetProduct` to super
+- One method per event — uses `super.sendEvent(named params)`
+- Uses `EventMiscellaneous` builder for miscellaneous data
 
-Show the full class for review.
+### Step 7 — Place events in UI code
 
-### Step 7 — Generate locator registration
-
-Show the exact lines to add to `locator.dart` with correct placement context (after which existing registration).
-
-### Step 8 — Place events in UI code
-
-For each event, show the **exact code change** needed:
+For each event, show **exact code change** with line numbers:
 
 ```
 File: lib/features/ask_munshi/presentation/views/ask_munshi_screen.dart
-Location: initState method
-Change: Add locator<AskMunshiEventManager>().screenView(); after super.initState();
+Location: initState method (after super.initState())
+Add: AskMunshiEventManager.instance.screenView(
+       screenName: AskMunshiScreenName.askMunshiScreen);
 ```
 
-```
-File: lib/features/ask_munshi/presentation/widgets/chat_input_widget.dart
-Location: Send button onTap callback
-Change: Add locator<AskMunshiEventManager>().onSendMessage(messageType: 'text'); before the BLoC event dispatch
-```
+Use the `Read` tool to find exact insertion points.
 
-Use the `Read` tool to inspect each screen file and find the exact insertion point. Show line number context.
+### Step 8 — Android events (if platform is Both)
+
+For hybrid features, also generate:
+- Constants in feature module's analytics directory
+- `WeLytic1.Builder` calls in Activities/Fragments
+- `WeLyticUtil.logScreenView` calls for screen views
 
 ### Step 9 — Compliance check
 
-After all code is generated, verify:
-
+Verify:
 - [ ] Every screen has exactly one `screen_view` event
-- [ ] Every `WEFlatButtonV2` and `WeInkWell` `onTap` has a corresponding click event
+- [ ] Every `WEFlatButtonV2` and `WeInkWell` `onTap` has a click event
 - [ ] All event names are snake_case
-- [ ] No event strings are hardcoded inline — all use constants
-- [ ] `EventManager` extends `BaseEventManager`
-- [ ] `EventDispatcherV2()` is used (not `EventDispatcherV1`)
-- [ ] `EventManager` registered as singleton in `locator.dart`
-- [ ] `miscellaneous` is `null` (not `""`) when no extra data is needed
-- [ ] `screenName` is consistent across all events for the same screen
-
-Report any violations and fix them before delivering final output.
+- [ ] EventManager uses singleton pattern (not locator)
+- [ ] EventManager extends `WeLyticsEventManagerV2` (not BaseEventManager)
+- [ ] `sendEvent` uses named parameters (not EventDTO)
+- [ ] `vehicleID` parameter spelled with capital D
+- [ ] `miscellaneous` is `null` (not `""`) when no extra data
+- [ ] screen_view fired in `initState()` (not build/BlocListener)
+- [ ] Events fired from UI layer only (not from BLoC)
+- [ ] `screenName` consistent across all events for same screen
 
 ---
 
-## Rules
+## Rules Summary
 
-- Every screen **MUST** have a `screen_view` event — flag and add one if missing from the sheet
-- Every tappable `WEFlatButtonV2` or `WeInkWell` **MUST** have a `click` event
-- Event names are **snake_case** — reject or auto-correct camelCase or PascalCase inputs
-- `screenName` must match the actual screen widget's identifier — not an arbitrary label
-- `miscellaneous` must follow `"key1:val1::key2:val2"` — never use comma or pipe separators
-- Never hardcode event strings inline in screens or BLoCs — always use constants from the constants class
-- `EventManager` must always extend `BaseEventManager`
-- Always use `EventDispatcherV2()` — never `EventDispatcherV1()`
-- Register `EventManager` as singleton, with an `isRegistered` guard
-- Extend existing `EventManager` classes — never create a duplicate for the same feature
-- Do not fire analytics events directly from BLoC — only from UI layer (screen, widget)
+1. EventManager uses **static singleton** — NOT GetIt locator
+2. Extends **`WeLyticsEventManagerV2`** — NOT `BaseEventManager`
+3. Constructor passes only **`targetProduct`** — NOT `EventDispatcherV2()`
+4. `sendEvent` uses **named parameters** — NOT `EventDTO` object
+5. Usage: **`MyEventManager.instance.method()`** — NOT `locator<MyEventManager>()`
+6. screen_view in **`initState()`** — NOT build/BlocListener
+7. Events from **UI only** — NOT from BLoC
+8. Miscellaneous: **`EventMiscellaneous` builder** or inline `key:value::key:value`
+9. `vehicleID` with **capital D** in sendEvent parameter
+10. Flutter events **forward to Android** → Firebase + CleverTap (shared namespace)
+11. All events get **`v1_` prefix** automatically on Android side
 
 ---
 
 ## Output
 
 ### Deliverable 1 — Event mapping table (approval gate)
-
-A table showing every event mapped to its screen and trigger location. **Get developer approval before writing any code.**
+Table showing every event mapped to screen and trigger location. **Get approval first.**
 
 ### Deliverable 2 — Generated files
-
-Provide the complete content of each file to create or update:
-
-1. `analytics/<feature>_event_constants.dart` — `EventName` + `EventCategory` classes
-2. `analytics/<feature>_event_manager.dart` — `EventManager` class with typed methods
-3. Diff/additions for `locator.dart` — registration snippet with surrounding context
+- `analytics/event_name.dart` — EventName constants
+- `analytics/event_category.dart` — EventCategory + ScreenName constants
+- `analytics/event_manager.dart` — EventManager with singleton + typed methods
 
 ### Deliverable 3 — UI placement instructions
-
-For each event, show:
-- File path
-- Method or widget where the call is placed
-- The exact line(s) to add (with 3 lines of surrounding context for clarity)
+For each event: file path, method, exact lines to add with surrounding context.
 
 ### Deliverable 4 — Compliance report
+Checklist confirming all 11 rules satisfied.
 
-A checklist (all items checked) confirming every rule from the compliance step is satisfied.
+---
+
+## Reference — Real examples from codebase
+
+**GPS Route EventManager** (best reference for V2 pattern):
+`apps/gps_route/lib/gps_route/analytics/event_manager.dart`
+
+**GPS EventName** (200+ constants):
+`apps/gps_route/lib/gps_route/analytics/event_name.dart`
+
+**GPS EventCategory** (100+ constants):
+`apps/gps_route/lib/gps_route/analytics/event_category.dart`
+
+**Fuel Guard EventManager** (V1 pattern reference):
+`apps/fuel_guard/lib/analytics/event_manager.dart`
+
+**EventMiscellaneous builder**:
+`apps/lubricants/lib/lubricants/analytics/event_miscellaneous.dart`
+
+**EventDispatcher V1/V2 definitions**:
+`packages/we_base/lib/src/analytics/we_lytics.dart`
