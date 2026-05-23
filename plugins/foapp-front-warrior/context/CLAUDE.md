@@ -333,6 +333,8 @@ Before creating any new UI component, check if it exists in:
 | Keep-alive page | `WeKeepAlivePage` |
 | Page view with list | `WePageViewWithListView` |
 | Network image | `CachedNetworkImage` (for cached network images) |
+| Timer/countdown | `TimerWidget` (OTP, payment, verification flows) |
+| Paginated list | `WEPagingController` + `WEPagedListView` + `PaginationFilteredWidget` |
 
 ### HARD RULES — Always use project widgets instead of raw Flutter widgets:
 
@@ -1125,7 +1127,150 @@ static String get myFeatureScreen =>
 
 ---
 
-## 29. What to Ask the User
+## 29. Pagination — WEPagingController + WEPagedListView
+
+### For paginated lists, use the project's pagination system:
+
+```dart
+// BLoC state tracking
+int _pageNumber = 1;
+final int _pageSize = 5;
+bool isLastPage = false;
+
+// Register events with transformers
+on<LoadInitialPage>(
+  (event, emit) => _loadInitialPageData(event, emit),
+  transformer: restartableDebounce(const Duration(milliseconds: 300)),
+);
+
+on<LoadAdditionalPage>(
+  (event, emit) async {
+    if (isLastPage == true) return;
+    await _loadAdditionalPages(emit);
+  },
+  transformer: droppable(),
+);
+```
+
+### UI uses `WEPagingController` + `WEPagedListView`:
+```dart
+final WEPagingController<int, MyItemDto> pagingController =
+    WEPagingController(firstPageKey: 0);
+
+WEPagedListView<int, MyItemDto>(
+  pagingController: pagingController,
+  builderDelegate: WEPagedChildBuilderDelegate<MyItemDto>(
+    itemBuilder: (context, item, index) => MyItemWidget(item: item),
+    noItemsFoundIndicatorBuilder: (_) => emptyWidget,
+  ),
+)
+```
+
+### BLoC event transformers (from `bloc_concurrency` + `rxdart`):
+```dart
+// Debounce search/filter events (waits, then restarts on new event)
+EventTransformer<E> restartableDebounce<E>(Duration duration) {
+  return (events, mapper) => events.debounceTime(duration).switchMap(mapper);
+}
+
+// Drop events while previous is still processing (for load-more pagination)
+// Import: import 'package:bloc_concurrency/bloc_concurrency.dart';
+// Usage: transformer: droppable()
+```
+
+### NEVER:
+- Write custom scroll-based pagination — use `WEPagingController` + `WEPagedListView`
+- Handle load-more without `droppable()` transformer — prevents duplicate API calls
+
+---
+
+## 30. DataState Pattern — API Response Handling
+
+### Repository returns `DataState<T>`, BLoC uses `.when()`:
+
+```dart
+// In Repository implementation (extends BaseApiRepository):
+Future<DataState<BaseAPIResponse<MyModel>>> fetchData(String param) {
+  return getStateOf(request: () => _api.fetchData(param));
+}
+
+// In BLoC — handle with .when():
+final result = await repository.fetchData(param);
+await result.when(
+  onSuccess: (successResponse) {
+    emit(MyLoaded(successResponse.response!.data!));
+  },
+  onFailed: (failedResponse) {
+    emit(ShowSnackBarState('Error occurred'));
+  },
+);
+```
+
+### DataState classes:
+```dart
+DataSuccess<T>   // holds response data
+DataFailed<T>    // holds DioException
+DataNotSet<T>    // initial/unset state
+```
+
+### NEVER:
+- Use raw `try-catch` on API calls without `DataState` — use `getStateOf()` in BaseApiRepository
+- Access `response.response!.data!` without null check inside `onSuccess`
+
+---
+
+## 31. Performance Tracking — PagePerformanceMetricTracker
+
+### Add performance tracking mixin to screens:
+
+```dart
+class MyScreen extends StatefulWidget {
+  // ...
+}
+
+class _MyScreenState extends State<MyScreen> with PagePerformanceMetricTracker {
+  @override
+  void initState() {
+    super.initState();
+    // After data loads:
+    dataLoadedTrackForFinalDraw();
+  }
+
+  @override
+  String getFlowNameForPageLoadMetricTracking() => 'my_feature_screen';
+}
+```
+
+Used across 14+ screens for page load performance metrics.
+
+---
+
+## 32. PDF Download & Share — DownloadSharePdfHandler
+
+### Use `DownloadSharePdfHandler` mixin for report/document downloads:
+
+```dart
+class _MyScreenState extends State<MyScreen> with DownloadSharePdfHandler {
+  void onDownloadTap() {
+    downloadAndShareReport(
+      context,
+      downloadLink: reportUrl,
+      fileName: 'My Report',
+      shareFile: true,   // opens share sheet after download
+      format: 'pdf',     // optional file extension
+    );
+  }
+}
+```
+
+From `package:we_op_common/utils/download_share_pdf_handler.dart`. Handles iOS/Android download paths, file sanitization, and share flow.
+
+### NEVER:
+- Write custom download/share logic for PDFs — use `DownloadSharePdfHandler` mixin
+
+---
+
+## 33. What to Ask the User
 
 Stop and ask the user when:
 
