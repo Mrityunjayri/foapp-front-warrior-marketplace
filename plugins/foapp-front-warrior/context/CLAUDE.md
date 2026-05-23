@@ -105,6 +105,7 @@ WETheme.textStyleMedium14.copyWith(
 ### NEVER:
 - Define a `TextStyle(...)` inline in UI code
 - Hardcode `fontSize`, `fontWeight`, `fontFamily` directly
+- Add `height:` (line height) in `.copyWith()` — this project does NOT use line height
 
 ---
 
@@ -141,20 +142,53 @@ emptyWidget           // SizedBox.shrink()
 
 ---
 
-## 5. Localization / Strings
+## 5. Text Widget — WeText
 
-### All user-visible strings MUST use `WeLangKeysStore`:
+### Always use `WeText` — never raw `Text`:
+
+`WeText` is the project's standardized text widget from `package:we_widgets` (re-exported via `we_lib_manager`). It provides consistent text rendering across the app.
 
 ```dart
-// Display text
-Text(WeLangKeysStore.instance.vehicleNumber.string(context))
+// Basic usage with WETheme style
+WeText(
+  WeLangKeysStore.instance.vehicleNumber.string(context),
+  style: WETheme.textStyleMedium14,
+)
+
+// With style customization (color only — NEVER add height)
+WeText(
+  'Display text',
+  style: WETheme.textStyleBold16.copyWith(
+    color: WEColors.color0066FF,
+  ),
+  textAlign: TextAlign.center,
+)
+```
+
+### NEVER:
+- Use raw `Text(...)` widget — always use `WeText(...)`
+- The only exception is inside `TextSpan` children (which use `text:` parameter, not a widget)
+
+---
+
+## 6. Localization / Strings — WeLangKeysStore + RawStrings
+
+This project uses **two string systems**. Use the correct one based on context:
+
+### A) `WeLangKeysStore` — for localized / dynamic strings (multi-language support):
+```dart
+// Display text with localization
+WeText(
+  WeLangKeysStore.instance.vehicleNumber.string(context),
+  style: WETheme.textStyleMedium14,
+)
 
 // With placeholder substitution
 String raw = WeLangKeysStore.instance.comOrderId.string(context); // "Order ID:%s"
 String result = formatStringWithNames(raw, ['ORD-12345']);        // "Order ID:ORD-12345"
 ```
 
-### Adding a new key:
+### Adding a new WeLangKeysStore key:
 ```dart
 // File: packages/we_op_common/lib/utils/we_lang_key_store.dart
 final KeyValueStore myNewLabel = const KeyValueStore(
@@ -163,13 +197,35 @@ final KeyValueStore myNewLabel = const KeyValueStore(
 );
 ```
 
+### B) `RawStrings` — for static, hardcoded English-only strings:
+
+Each feature has its own `raw_strings.dart` file in `utils/` folder with static const strings.
+
+```dart
+// File: apps/my_feature/lib/utils/raw_strings.dart
+class RawStrings {
+  static const String screenTitle = 'My Feature';
+  static const String errorMessage = 'Something went wrong';
+  static const String confirmBtn = 'Confirm';
+}
+
+// Usage:
+WeText(RawStrings.screenTitle, style: WETheme.textStyleBold16)
+```
+
+### When to use which:
+- **WeLangKeysStore** → Strings that need multi-language support (user-facing labels, buttons, descriptions)
+- **RawStrings** → Static strings that will always be English (internal labels, debug text, fixed copy)
+- When unsure → **ask the user**
+
 ### NEVER:
-- Hardcode strings like `Text("Vehicle Number")` in UI
+- Hardcode strings inline like `WeText("Vehicle Number")` — use `WeLangKeysStore` or `RawStrings`
 - Use string literals in button titles, labels, hints, or error messages
+- Create `RawStrings` class outside the feature's `utils/` folder
 
 ---
 
-## 6. Buttons
+## 7. Buttons
 
 ### Use `WEFlatButtonV2` variants — never raw `ElevatedButton`/`TextButton`:
 
@@ -205,7 +261,7 @@ WEFlatButtonV2.greySecondary(title: '...', onTap: () {})
 
 ---
 
-## 7. Text Fields
+## 8. Text Fields
 
 ### Use `WeTextFieldV2` — never raw `TextField`/`TextFormField`:
 
@@ -235,7 +291,7 @@ WeOpTextFieldWidget(
 
 ---
 
-## 8. Common Widgets — Use Before Creating
+## 9. Common Widgets — Use Before Creating
 
 Before creating any new UI component, check if it exists in:
 - `packages/we_common_widgets/`
@@ -246,32 +302,122 @@ Before creating any new UI component, check if it exists in:
 | Need | Use |
 |------|-----|
 | Card | `WeCard` / `WeCardV2` / `WeCardWidget` |
-| Loading spinner | `WeLoaderWidget` |
+| Loading spinner | `WeLoaderWidget` / `WeOpLoader` |
 | Confirmation popup | `WeConfirmationDialog` |
-| Bottom sheet | `WeOpBottomSheetHelperWidgetV2` |
+| Bottom sheet | `WeOpBottomSheetHelperWidgetV2` + `showCustomBottomSheet()` |
 | Success screen | `WESuccessScreen` / `WeSuccessScreenV2` |
 | Scaffold | `WEScaffold` |
 | Divider | `WEDividerWidget` |
 | Checkbox | `WeCheckboxWidget` |
 | Radio | `WeRadioTile` / `WeRadioV2` / `WeRadioTileV2` |
+| Radio chip | `WeRadioChipWidget` |
 | OTP input | `WEOtpBottomSheet` / `WeOtpBoxesWidgetV2` |
 | Image upload | `WeImageUploadWidget` |
 | Shimmer loading | `ShimmerEffect` / `AssetLoadShimmer` |
 | Web view | `WEWebViewScreen` |
-| Video player | `ThumbnailVideoPlayer` |
+| Video player | `ThumbnailVideoPlayer` / `WeVideoPlayBtnWidget` |
 | Star rating | `WeStarRatingWidget` |
 | Calendar | `WECalendar` |
 | Toggle | `WeHorizontalToggleButton` |
 | Bottom nav button | `WEBottomNavButtonWidget` |
 | Dashed container | `WeDashedContainerWidget` |
-| Banner | `WEBanner` / `BannerAnimationWidget` |
+| Banner | `WEBanner` / `BannerAnimationWidget` / `WEBannerCardShader` |
 | Rive animation | `WeRiveWidget` |
+| Toast (success/error) | `WEOpToast().showSuccessToast()` / `.showErrorToast()` |
+| Border container | `WEBorderContainerWidget` |
+| Contact picker | `WEContactPicker` |
+| Delete button | `WeDeleteBtn` |
+| Promotion button | `WeFlatPromotionBtn` |
+| Glow text | `WeGlowText` |
+| Dialog button config | `WeDialogButtonConfig` |
+| Keep-alive page | `WeKeepAlivePage` |
+| Page view with list | `WePageViewWithListView` |
+| Network image | `CachedNetworkImage` (for cached network images) |
+
+### HARD RULES — Always use project widgets instead of raw Flutter widgets:
+
+| Raw Flutter Widget | NEVER use | ALWAYS use instead |
+|---|---|---|
+| `Scaffold(...)` | ❌ | `WEScaffold(...)` |
+| `AppBar(...)` | ❌ | `WEAppBar(title: ...)` |
+| `Text(...)` | ❌ | `WeText(...)` |
+| `Card(...)` | ❌ | `WeCardV2(...)` |
+| `CircularProgressIndicator()` | ❌ | `WeLoaderWidget()` |
+| `AlertDialog(...)` | ❌ | `WeConfirmationDialog.show(...)` |
+| `Divider()` | ❌ | `WeDividerWidget()` |
+| `Checkbox(...)` | ❌ | `WeCheckboxWidget(...)` |
+| `ElevatedButton` / `TextButton` | ❌ | `WEFlatButtonV2.primary(...)` |
+| `TextField` / `TextFormField` | ❌ | `WeTextFieldV2(...)` |
+| `GestureDetector(onTap:)` | ❌ | `WeInkWell(onTap:)` |
+| `InkWell(...)` | ❌ | `WeInkWell(...)` |
+| `SvgPicture.asset(...)` | ❌ | `AssetsHelper.svg(...)` |
+| `Image.asset(...)` | ❌ | `AssetsHelper.png(...)` |
+| `SizedBox.shrink()` | ❌ | `emptyWidget` |
+| `SizedBox()` (empty) | ❌ | `emptyWidget` |
+| `Navigator.push/pop` | ❌ | `WeNavigator.push/pop` |
+| `showModalBottomSheet(...)` | ❌ | `showCustomBottomSheet(...)` |
+| `SnackBar(...)` (for success/error) | ❌ | `WEOpToast().showSuccessToast/showErrorToast` |
+
+### NEVER add `height` (line height) in text style copyWith:
+The project does NOT use line height in text styles. Never write:
+```dart
+// ❌ WRONG — do NOT add height
+WETheme.textStyleMedium14.copyWith(height: 1.3)
+
+// ✅ CORRECT — no height parameter
+WETheme.textStyleMedium14.copyWith(color: WEColors.color888888)
+```
+
+### If a widget you need does NOT exist in this table or the catalog below → **STOP and ask the user**. Do not use raw Flutter widgets.
 
 ### If the required component does NOT exist → **ask the user** before building a new one.
 
 ---
 
-## 9. Navigation
+## 10. Scaffold — WEScaffold
+
+### Always use `WEScaffold` — never raw `Scaffold`:
+
+`WEScaffold` wraps Flutter's Scaffold with auto-dismiss keyboard on tap. Available from `package:we_op_common`.
+
+```dart
+WEScaffold(
+  appBar: WEAppBar(title: RawStrings.screenTitle),
+  body: BlocBuilder<MyBloc, MyState>(
+    builder: (context, state) => MyContent(),
+  ),
+  bottomNavigationBar: WEBottomNavButtonWidget(...),
+  backgroundColor: WEColors.colorFFFFFF,
+)
+```
+
+### NEVER:
+- Use raw `Scaffold(...)` — always use `WEScaffold(...)`
+
+---
+
+## 11. AppBar — WEAppBar
+
+### Always use `WEAppBar` — never raw `AppBar`:
+
+```dart
+WEAppBar(
+  title: RawStrings.screenTitle,       // required
+  backIcon: true,                       // default true, shows back button
+  icon: PNGAssetsPath.myIcon,          // optional icon before title
+  screenName: MyScreenName.myScreen,    // optional, for analytics
+  eventCategory: MyEventCategory.nav,   // optional, for analytics
+)
+```
+
+`WEAppBar` automatically calls `WeNavigator.pop(context)` on back press and fires analytics events if `screenName`/`eventCategory` are provided.
+
+### NEVER:
+- Use raw `AppBar(...)` — always use `WEAppBar(...)`
+
+---
+
+## 12. Navigation
 
 ### Use `WeNavigator` — never raw `Navigator.push`/`Navigator.pop`:
 
@@ -283,6 +429,21 @@ WeNavigator.push(context, routeName: '/home', arguments: data)
 WeNavigator.pop(context)
 WeNavigator.pop(context, result)   // with result
 
+// Push replacement (replaces current route)
+WeNavigator.pushReplacement(context, routeName: '/new-screen')
+
+// Push and remove all previous routes
+WeNavigator.pushAndRemoveUntil(context, routeName: '/home')
+
+// Pop until specific route
+WeNavigator.popUntilRoute(context, routeName: '/dashboard')
+
+// Pop to first route
+WeNavigator.popUntilFirstRoute(context)
+
+// Safe pop (only if can pop)
+WeNavigator.maybePop(context)
+
 // Per-app AppNavigator wrapper
 AppNavigator.of(context).pushNamed('/route', arguments: args)
 AppNavigator.of(context).pop()
@@ -292,10 +453,11 @@ AppNavigator.of(context).canPop()
 ### NEVER:
 - Use `Navigator.of(context).push(...)`
 - Use `Navigator.pop(context)` directly
+- Use `Navigator.pushReplacement(...)` directly
 
 ---
 
-## 10. State Management — BLoC
+## 13. State Management — BLoC
 
 ### Every feature uses flutter_bloc. Pattern:
 
@@ -377,7 +539,7 @@ BlocConsumer<MyBloc, MyState>(
 
 ---
 
-## 11. API Integration
+## 14. API Integration
 
 ### Layer order: UI → BLoC → UseCase → Repository → API Service
 
@@ -433,7 +595,7 @@ class MyUseCase {
 
 ---
 
-## 12. JSON Models
+## 15. JSON Models
 
 ### Manual `fromJson`/`toJson` — no code generation (no freezed, no json_serializable):
 
@@ -467,7 +629,7 @@ String myModelToJson(MyModel data) => json.encode(data.toJson());
 
 ---
 
-## 13. Dependency Injection — GetIt / locator
+## 16. Dependency Injection — GetIt / locator
 
 ### Register in feature's `locator.dart`:
 ```dart
@@ -512,7 +674,7 @@ locator<MyRepository>()
 
 ---
 
-## 14. Firebase Analytics / WeLytics
+## 17. Firebase Analytics / WeLytics
 
 ### EventManager — Static singleton pattern (NOT GetIt locator):
 
@@ -593,9 +755,9 @@ miscellaneous: EventMiscellaneous()
 
 ---
 
-## 15. Error Handling / User Feedback
+## 18. Error Handling / User Feedback
 
-### Use `SnackBars` utility for error messages:
+### A) `SnackBars` — for inline error messages from BLoC:
 ```dart
 // Show
 SnackBars(message: state.errorText).show(context);
@@ -615,9 +777,28 @@ if (state is ShowSnackBarState) {
 }
 ```
 
+### B) `WEOpToast` — for success/error toast notifications:
+
+Use `WEOpToast` from `package:we_common_widgets` for visual toast feedback (success ticks, error crosses):
+```dart
+// Success toast (green with tick icon)
+WEOpToast().showSuccessToast(context, message: 'Vehicle added successfully');
+
+// Error toast (red with error icon)
+WEOpToast().showErrorToast(context, message: 'Failed to save changes');
+```
+
+### When to use which:
+- **SnackBars** → Simple text error messages from BLoC failure states
+- **WEOpToast** → Visual success/error feedback after user actions (form submit, save, delete)
+
+### NEVER:
+- Use raw `ScaffoldMessenger.of(context).showSnackBar(SnackBar(...))` — use `SnackBars` or `WEOpToast`
+- Use raw `SnackBar(...)` widget directly
+
 ---
 
-## 16. Native Communication — MethodChannel
+## 19. Native Communication — MethodChannel
 
 ### Channel names used in this project:
 ```dart
@@ -646,7 +827,7 @@ await MyNativeActionInvoker({'type': 'action', 'data': payload.toJson()}).execut
 
 ---
 
-## 17. Image Loading
+## 20. Image Loading
 
 ### Network images:
 ```dart
@@ -666,7 +847,7 @@ ClipRRect(
 
 ---
 
-## 18. Form Validation
+## 21. Form Validation
 
 ### Pass validator to `WeTextFieldV2`:
 ```dart
@@ -682,31 +863,45 @@ WeTextFieldV2(
 
 ---
 
-## 19. New Feature Checklist
+## 22. New Feature Checklist
 
 When building any new feature, verify every item:
 
-- [ ] Strings → `WeLangKeysStore.instance.myKey.string(context)`
+- [ ] Scaffold → `WEScaffold(...)` not raw `Scaffold(...)`
+- [ ] AppBar → `WEAppBar(title: ...)` not raw `AppBar(...)`
+- [ ] Text widget → `WeText(...)` not raw `Text(...)`
+- [ ] Strings → `WeLangKeysStore.instance.myKey.string(context)` or `RawStrings.myKey`
 - [ ] Colors → `WEColors.colorXX` or `AssetsColors.colorXX`
-- [ ] Text styles → `WETheme.textStyleMedium14`
+- [ ] Text styles → `WETheme.textStyleMedium14` (NEVER add `height:` in copyWith)
 - [ ] Spacing → `verticalSpace16` / `horizontalPadding16`
+- [ ] Empty widget → `emptyWidget` not `SizedBox.shrink()` or `SizedBox()`
 - [ ] Buttons → `WEFlatButtonV2.primary(...)` or variant
 - [ ] Text fields → `WeTextFieldV2(...)`
-- [ ] Navigation → `WeNavigator.push/pop`
+- [ ] Navigation → `WeNavigator.push/pop` (NEVER raw `Navigator`)
+- [ ] Cards → `WeCardV2(...)` not raw `Card(...)`
+- [ ] Loading → `WeLoaderWidget()` not `CircularProgressIndicator()`
+- [ ] Dialogs → `WeConfirmationDialog.show(...)` not raw `AlertDialog`
+- [ ] Dividers → `WeDividerWidget()` not raw `Divider()`
+- [ ] Checkboxes → `WeCheckboxWidget(...)` not raw `Checkbox`
 - [ ] State management → BLoC (event / sealed state / bloc)
 - [ ] API → Retrofit service → Repository impl → UseCase
 - [ ] Models → Manual `fromJson`/`toJson`
 - [ ] DI → Register in `locator.dart`
 - [ ] Analytics → `WeLyticsEventManagerV2` singleton via `.instance`
 - [ ] Errors → `ShowSnackBarState` → `SnackBars(...).show(context)`
+- [ ] Toasts → `WEOpToast().showSuccessToast/showErrorToast` not raw SnackBar
+- [ ] Bottom sheets → `showCustomBottomSheet(...)` not raw `showModalBottomSheet`
 - [ ] Architecture → presentation / domain / data folders
 - [ ] Common widgets → check `we_common_widgets` and `we_op_common` first
 - [ ] Tap handling → `WeInkWell(onTap: ..., child: ...)` not `GestureDetector`
 - [ ] Icons/Images → `AssetsHelper.svg()` / `.png()` / `.pngNetwork()` with path constants
+- [ ] Text formatters → `UpperCaseTextFormatter` / `AlphaNumericTextFormatter` from `we_base`
+- [ ] Routes → `ModuleRouteNames.myScreen` not hardcoded strings
+- [ ] Date/time → `DateTimeUtils` not custom formatting logic
 
 ---
 
-## 20. Tap / Click Handling — WeInkWell
+## 23. Tap / Click Handling — WeInkWell
 
 ### Always use `WeInkWell` — never raw `GestureDetector` or `InkWell`:
 
@@ -731,7 +926,7 @@ WeInkWell(
 
 ---
 
-## 21. Icon & Image Loading — AssetsHelper
+## 24. Icon & Image Loading — AssetsHelper
 
 ### All icons and images MUST be loaded through `AssetsHelper`:
 
@@ -805,7 +1000,132 @@ static const String myNewIcon = '${_networkGpsBasePath}my_new_icon.png';
 
 ---
 
-## 22. What to Ask the User
+## 25. Bottom Sheets — showCustomBottomSheet
+
+### Always use `showCustomBottomSheet()` — never raw `showModalBottomSheet()`:
+
+The project wraps all bottom sheets using `showCustomBottomSheet()` from `package:we_common_widgets`. For content-heavy bottom sheets, use `WeOpBottomSheetHelperWidgetV2`:
+
+```dart
+// Simple bottom sheet with custom content
+showCustomBottomSheet(
+  context: context,
+  builder: (context) => MyBottomSheetContent(),
+  isDismissible: true,
+  enableDrag: true,
+);
+
+// Standard bottom sheet with header, description, and buttons
+showCustomBottomSheet(
+  context: context,
+  builder: (context) => WeOpBottomSheetHelperWidgetV2(
+    headerText: RawStrings.confirmTitle,
+    description: RawStrings.confirmDescription,
+    primaryBtnText: WeLangKeysStore.instance.confirm.string(context),
+    primaryBtnCallBack: () => handleConfirm(),
+    secondaryBtnText: WeLangKeysStore.instance.cancel.string(context),
+    secondaryBtnCallBack: () => WeNavigator.pop(context),
+  ),
+);
+```
+
+### NEVER:
+- Use raw `showModalBottomSheet(...)` — always use `showCustomBottomSheet(...)`
+- Build bottom sheet content without using `WeOpBottomSheetHelperWidgetV2` when the design includes header + description + buttons
+
+---
+
+## 26. Text Input Formatters
+
+### Available formatters from `package:we_base`:
+
+```dart
+// Force uppercase text (e.g., vehicle numbers)
+WeTextFieldV2(
+  textInputFormatter: [UpperCaseTextFormatter()],
+)
+
+// Allow only alphanumeric characters
+WeTextFieldV2(
+  textInputFormatter: [AlphaNumericTextFormatter()],
+)
+```
+
+### Import from:
+```dart
+import 'package:we_base/we_base_bridge.dart';
+// Provides: UpperCaseTextFormatter, AlphaNumericTextFormatter
+```
+
+### NEVER:
+- Create custom `TextInputFormatter` for uppercase or alphanumeric filtering — use the existing ones
+- If you need a formatter that doesn't exist → **ask the user**
+
+---
+
+## 27. Extensions & Utility Helpers
+
+### Available extensions from `package:we_base`:
+
+```dart
+// String → Color conversion (hex string to Color)
+'#FF5733'.fromHexColor  // → Color(0xFFFF5733)
+
+// Number formatting with rupee symbol
+(12470).formatAmount    // → "₹12,470"
+(100.0).formatAmount    // → "₹100"
+```
+
+### DateTimeUtils — from `package:we_op_common`:
+
+```dart
+final dateUtils = DateTimeUtils();
+
+// Epoch seconds → start/end of day
+dateUtils.getDayStartInSecond(epochSeconds);
+dateUtils.getDayEndInSecond(epochSeconds);
+
+// Format dates
+dateUtils.formatDateToDDMMYYYY(dateTime);  // → "05/11/2025"
+dateUtils.formatEpoch1(epochMillis);        // → "23 Nov 25"
+
+// Current/past epoch
+dateUtils.getCurrentEpocInSeconds();
+dateUtils.getLast30DayEpocInSeconds();
+```
+
+### WeOpSharedPreference — from `package:we_base`:
+
+For storing/reading local preferences, use `WeOpSharedPreference` — never raw `SharedPreferences` directly.
+
+### NEVER:
+- Write custom date formatting logic — check `DateTimeUtils` first
+- Write custom number formatting — check `NumExtension.formatAmount` first
+- Use raw `SharedPreferences.getInstance()` — use `WeOpSharedPreference`
+
+---
+
+## 28. Route Registration — ModuleRouteNames
+
+### All feature routes are registered in `ModuleRouteNames` (from `package:we_base`):
+
+```dart
+// Route names follow pattern: "{ModuleServiceName}/{screen_name}"
+static String get myFeatureScreen =>
+    "${ModuleServiceName.myFeature}/my_feature_screen";
+```
+
+### When adding a new screen:
+1. Add route name to `ModuleRouteNames` in `packages/we_base/lib/src/bridge/module_route_names.dart`
+2. Register the route in your feature's route configuration
+3. Navigate using: `WeNavigator.push(context, routeName: ModuleRouteNames.myFeatureScreen)`
+
+### NEVER:
+- Hardcode route strings like `WeNavigator.push(context, routeName: '/my-screen')` — use `ModuleRouteNames`
+
+---
+
+## 29. What to Ask the User
 
 Stop and ask the user when:
 
@@ -821,3 +1141,6 @@ Stop and ask the user when:
 10. DI registration order or scope (singleton vs factory) is unclear
 11. An icon/image is needed but no matching constant exists in `SVGAssetsPath` / `PNGAssetsPath` — ask designer for S3 URL
 12. A complex gesture is needed and you're unsure whether `WeInkWell` or `GestureDetector` is appropriate
+13. A text input formatter for a specific pattern does not exist in `we_base`
+14. The route name for a new screen is not yet defined in `ModuleRouteNames`
+15. A date/time formatting utility is needed but doesn't exist in `DateTimeUtils`

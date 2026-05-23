@@ -195,19 +195,53 @@ Once approved, generate code file by file. For EACH file:
 
 ### Mandatory conventions (from CLAUDE.md)
 
+**Scaffold:** Use `WEScaffold(...)`. NEVER raw `Scaffold(...)`.
+
+**AppBar:** Use `WEAppBar(title: ...)`. NEVER raw `AppBar(...)`.
+
+**Text widget:** Use `WeText(...)` for ALL text display. NEVER raw `Text(...)`.
+
 **Colors:** Use `WEColors.colorXXXXXX` or `AssetsColors.colorXXXXXX` only. Never `Color(0xff...)`.
 
-**Text styles:** Use `WETheme.textStyleMedium14` etc. Never inline `TextStyle(...)`.
+**Text styles:** Use `WETheme.textStyleMedium14` etc. Never inline `TextStyle(...)`. NEVER add `height:` in `.copyWith()`.
 
 **Spacing:** Use `verticalSpace16`, `horizontalPadding16` etc. Never inline `SizedBox(height: 16)`.
 
-**Strings:** Use `WeLangKeysStore.instance.myKey.string(context)`. Never hardcode strings.
+**Empty widget:** Use `emptyWidget`. Never `SizedBox.shrink()` or `SizedBox()`.
+
+**Strings:** Use `WeLangKeysStore.instance.myKey.string(context)` for localized strings or `RawStrings.myKey` for static English strings. Never hardcode inline strings. Button text MUST also use WeLangKeysStore or RawStrings.
 
 **Buttons:** Use `WEFlatButtonV2.primary(...)` variants. Never raw `ElevatedButton`.
 
 **Text fields:** Use `WeTextFieldV2(...)`. Never raw `TextField`.
 
-**Navigation:** Use `WeNavigator.push/pop`. Never `Navigator.of(context)`.
+**Navigation:** Use `WeNavigator.push/pop`. NEVER `Navigator.of(context)` or `Navigator.push/pop` directly.
+
+**Cards:** Use `WeCardV2(...)`. Never raw `Card(...)`.
+
+**Loading:** Use `WeLoaderWidget()`. Never `CircularProgressIndicator()`.
+
+**Dialogs:** Use `WeConfirmationDialog.show(...)`. Never raw `AlertDialog(...)`.
+
+**Dividers:** Use `WeDividerWidget()`. Never raw `Divider()`.
+
+**Checkboxes:** Use `WeCheckboxWidget(...)`. Never raw `Checkbox(...)`.
+
+**Tap handling:** Use `WeInkWell(onTap:)`. Never `GestureDetector(onTap:)` for simple taps.
+
+**Icons/Images:** Use `AssetsHelper.svg()` / `.png()` / `.pngNetwork()`. Never raw `SvgPicture.asset()` / `Image.asset()`.
+
+**Bottom sheets:** Use `showCustomBottomSheet(...)`. Never raw `showModalBottomSheet(...)`. For standard bottom sheets with header + buttons, use `WeOpBottomSheetHelperWidgetV2`.
+
+**Toasts:** Use `WEOpToast().showSuccessToast(context, message:)` / `.showErrorToast(...)` for visual success/error feedback. Never raw `ScaffoldMessenger.showSnackBar(SnackBar(...))`.
+
+**Text formatters:** Use `UpperCaseTextFormatter` / `AlphaNumericTextFormatter` from `package:we_base`. Never create custom formatters for these common patterns.
+
+**Route names:** Use `ModuleRouteNames.myScreen` for navigation. Never hardcode route strings like `'/my-route'`.
+
+**Date/time:** Use `DateTimeUtils` from `package:we_op_common` for date formatting and epoch conversions. Never write custom date formatting logic.
+
+**If ANY widget/color/style/constant you need does NOT exist in the codebase → STOP and ask the developer. NEVER invent or use raw Flutter widgets.**
 
 **State management:** BLoC with events extending `Equatable`, sealed state classes.
 

@@ -11,7 +11,7 @@ metadata:
 
 # Check Code — Convention Compliance Validator (Flutter + Android)
 
-Validate code against conventions for both OperatorAppFlutter (Dart) and OperatorApp (Kotlin). Report violations with severity, location, and auto-fix suggestions.
+Validate code against conventions for both OperatorAppFlutter (Dart) and OperatorApp (Kotlin). 24 Flutter rules + 7 Kotlin rules + 4 bridge rules = 35 total. Report violations with severity, location, and auto-fix suggestions.
 
 ## Input
 
@@ -26,83 +26,155 @@ Accept one of:
 
 Check each rule below. For every violation found, report: file, line number (if applicable), rule violated, severity, and suggested fix.
 
-### Rule 1: Colors (severity: ERROR)
+### Rule 1: Scaffold — WEScaffold (severity: ERROR)
+**Violation:** Raw `Scaffold(` used instead of `WEScaffold(`
+**Check:** Grep for `Scaffold(` in UI code (exclude WEScaffold definition file)
+**Fix:** Replace `Scaffold(...)` with `WEScaffold(...)`
+
+### Rule 2: AppBar — WEAppBar (severity: ERROR)
+**Violation:** Raw `AppBar(` used instead of `WEAppBar(`
+**Check:** Grep for `AppBar(` in UI code (exclude WEAppBar definition file)
+**Fix:** Replace `AppBar(...)` with `WEAppBar(title: ...)`
+
+### Rule 3: Text widget — WeText (severity: ERROR)
+**Violation:** Raw `Text(` used instead of `WeText(`
+**Check:** Grep for `Text(` in UI code (widget files, screens, build methods)
+**Fix:** Replace `Text(...)` with `WeText(...)`
+**Exception:** `Text(` inside test files, and `text:` parameter in `TextSpan` children are allowed
+
+### Rule 4: Colors (severity: ERROR)
 **Violation:** `Color(0xff...)` used inline in widget code
 **Check:** Grep for `Color(0x` in build methods, constructors, and widget returns
 **Fix:** Replace with matching `WEColors.colorXXXXXX` or `AssetsColors.colorXXXXXX`
 **Exception:** Color definitions inside `assets_colors.dart` itself are allowed
 
-### Rule 2: Text styles (severity: ERROR)
+### Rule 5: Text styles (severity: ERROR)
 **Violation:** `TextStyle(` used inline in UI code
 **Check:** Grep for `TextStyle(` outside of theme definition files
 **Fix:** Replace with `WETheme.textStyleXXXX.copyWith(...)` if customization needed
 
-### Rule 3: Spacing (severity: WARNING)
+### Rule 6: Line height in text styles (severity: ERROR)
+**Violation:** `height:` parameter used in `.copyWith()` on WETheme text styles
+**Check:** Grep for `.copyWith(` with `height:` parameter in UI code
+**Fix:** Remove `height:` parameter — this project does NOT use line height in text styles
+
+### Rule 7: Spacing (severity: WARNING)
 **Violation:** `SizedBox(height:` or `SizedBox(width:` with hardcoded numbers
 **Check:** Grep for `SizedBox(height:` and `SizedBox(width:` in widget files
 **Fix:** Replace with `verticalSpaceN` or `horizontalSpaceN` from we_style
 **Violation:** `EdgeInsets.` used inline
 **Fix:** Replace with spacing constants from we_style (horizontalPadding16, padding16, etc.)
 
-### Rule 4: Strings / Localization (severity: WARNING)
-**Violation:** Hardcoded string literals in `Text()`, button titles, hints, labels
-**Check:** Grep for `Text('` or `Text("` (excluding test files)
-**Fix:** Add key to `WeLangKeysStore` and use `.string(context)`
+### Rule 8: Empty widget (severity: WARNING)
+**Violation:** `SizedBox.shrink()` or `SizedBox()` used instead of `emptyWidget`
+**Check:** Grep for `SizedBox.shrink()` and `SizedBox()` (empty constructor) in UI code
+**Fix:** Replace with `emptyWidget` constant from `package:we_style`
+
+### Rule 9: Strings / Localization (severity: WARNING)
+**Violation:** Hardcoded string literals in `WeText()`, button titles, hints, labels
+**Check:** Grep for `WeText('` or `WeText("` with inline strings (excluding test files)
+**Fix:** Use `WeLangKeysStore.instance.myKey.string(context)` for localized strings or `RawStrings.myKey` for static English strings
 **Exception:** Strings in test files, comments, and debug prints are allowed
 
-### Rule 5: Buttons (severity: ERROR)
+### Rule 10: Buttons (severity: ERROR)
 **Violation:** `ElevatedButton`, `TextButton`, `OutlinedButton` used directly
 **Check:** Grep for these widget names in UI code
 **Fix:** Replace with `WEFlatButtonV2.primary(...)` or appropriate variant
 
-### Rule 6: Text fields (severity: ERROR)
+### Rule 11: Text fields (severity: ERROR)
 **Violation:** `TextField(` or `TextFormField(` used directly
 **Check:** Grep for these widget names
 **Fix:** Replace with `WeTextFieldV2(...)` or `WeOpTextFieldWidget(...)`
 
-### Rule 7: Navigation (severity: ERROR)
+### Rule 12: Navigation (severity: ERROR)
 **Violation:** `Navigator.of(context)` or `Navigator.push` used directly
 **Check:** Grep for `Navigator.of` and `Navigator.push`
 **Fix:** Replace with `WeNavigator.push/pop` or `AppNavigator.of(context)`
 
-### Rule 8: BLoC pattern (severity: WARNING)
+### Rule 13: Card widget (severity: ERROR)
+**Violation:** Raw `Card(` used instead of `WeCardV2(`
+**Check:** Grep for `Card(` in UI code (exclude test files and card definition files)
+**Fix:** Replace with `WeCardV2(child: ..., borderRadius: ..., padding: ...)`
+
+### Rule 14: Loading indicator (severity: ERROR)
+**Violation:** `CircularProgressIndicator(` used instead of `WeLoaderWidget()`
+**Check:** Grep for `CircularProgressIndicator(` in UI code
+**Fix:** Replace with `WeLoaderWidget()`
+
+### Rule 15: Dialog (severity: ERROR)
+**Violation:** Raw `AlertDialog(` or `showDialog` with custom dialog used instead of `WeConfirmationDialog`
+**Check:** Grep for `AlertDialog(` in UI code
+**Fix:** Replace with `WeConfirmationDialog.show(context: ..., title: ..., leftButton: ..., rightButton: ...)`
+
+### Rule 16: Divider (severity: WARNING)
+**Violation:** Raw `Divider(` used instead of `WeDividerWidget(`
+**Check:** Grep for `Divider(` in UI code (exclude divider definition files)
+**Fix:** Replace with `WeDividerWidget()`
+
+### Rule 17: Checkbox (severity: ERROR)
+**Violation:** Raw `Checkbox(` used instead of `WeCheckboxWidget(`
+**Check:** Grep for `Checkbox(` in UI code (exclude checkbox definition files)
+**Fix:** Replace with `WeCheckboxWidget(displayText: [...], onChange: ...)`
+
+### Rule 18: BLoC pattern (severity: WARNING)
 **Violation:** Events not extending Equatable, states not sealed
 **Check:** Read BLoC event files — check for `extends Equatable`. Read state files — check for `sealed class`
 **Fix:** Add Equatable extension, convert to sealed classes
 
-### Rule 9: API pattern (severity: WARNING)
+### Rule 19: API pattern (severity: WARNING)
 **Violation:** API calls not following Retrofit → Repository → UseCase pattern
 **Check:** Look for direct Dio calls outside of repository implementations
 **Fix:** Restructure following Clean Architecture layers
 
-### Rule 10: Models (severity: WARNING)
+### Rule 20: Models (severity: WARNING)
 **Violation:** Using `@JsonSerializable`, `@freezed`, or code generation for models
 **Check:** Grep for these annotations
 **Fix:** Replace with manual `fromJson`/`toJson` factory constructors
 
-### Rule 11: DI registration (severity: WARNING)
+### Rule 21: DI registration (severity: WARNING)
 **Violation:** New classes not registered in locator.dart
 **Check:** Cross-reference new Repository, UseCase, BLoC classes against locator registrations
 **Fix:** Add `locator.registerSingleton<MyClass>(...)` with `isRegistered` guard
 
-### Rule 12: Analytics (severity: INFO)
+### Rule 22: Analytics (severity: INFO)
 **Violation:** New screen without screen_view event, new button without click event
 **Check:** Look for screens missing `MyEventManager.instance.screenView()` in initState, buttons missing click event tracking
 **Fix:** Create EventManager extending `WeLyticsEventManagerV2` with static singleton pattern. Use `super.sendEvent(named params)` — NOT `EventDTO`. Register via `static final instance` — NOT GetIt locator
 
-### Rule 13: Tap handling — WeInkWell (severity: ERROR)
+### Rule 23: Tap handling — WeInkWell (severity: ERROR)
 **Violation:** `GestureDetector(onTap:` used for simple tap handling
 **Check:** Grep for `GestureDetector(` in UI code. If only `onTap` is used (no onLongPress, onPan, onScale, drag), it should be `WeInkWell`
 **Fix:** Replace `GestureDetector(onTap: ..., child: ...)` with `WeInkWell(onTap: ..., child: ...)`
 **Exception:** GestureDetector is allowed when using complex gestures (long press, pan, scale, drag)
 
-### Rule 14: Icon/Image loading — AssetsHelper (severity: ERROR)
+### Rule 24: Icon/Image loading — AssetsHelper (severity: ERROR)
 **Violation:** `SvgPicture.asset(`, `SvgPicture.network(`, `Image.asset(` used directly for app icons
 **Check:** Grep for `SvgPicture.asset(`, `SvgPicture.network(`, `Image.asset(` in UI files
 **Fix:** Replace with `AssetsHelper.svg(assetName: SVGAssetsPath.xxx)`, `AssetsHelper.png(assetName: PNGAssetsPath.xxx)`, or `AssetsHelper.pngNetwork(assetName: url)`
 **Also check:** Hardcoded S3 URLs (wheelseye.com/static-content) inline instead of using path constants
 **Fix:** Move URL to `SVGAssetsPath` or `PNGAssetsPath` constant, then use via AssetsHelper
 **Exception:** `Image.network()` is allowed for dynamic user-uploaded images (profile pics, documents from API)
+
+### Rule 25: Bottom sheet — showCustomBottomSheet (severity: ERROR)
+**Violation:** Raw `showModalBottomSheet(` used instead of `showCustomBottomSheet(`
+**Check:** Grep for `showModalBottomSheet(` in UI code
+**Fix:** Replace with `showCustomBottomSheet(context: context, builder: ...)`
+
+### Rule 26: Toast — WEOpToast (severity: WARNING)
+**Violation:** Raw `ScaffoldMessenger.of(context).showSnackBar(SnackBar(` used for success/error feedback
+**Check:** Grep for `showSnackBar(SnackBar(` and `ScaffoldMessenger` in UI code
+**Fix:** Replace with `WEOpToast().showSuccessToast(context, message: ...)` or `.showErrorToast(...)`
+**Exception:** `SnackBars(message:).show(context)` is allowed for BLoC error state handling
+
+### Rule 27: Text formatters (severity: INFO)
+**Violation:** Custom `TextInputFormatter` for uppercase or alphanumeric when existing ones are available
+**Check:** Grep for `extends TextInputFormatter` in feature code (not in `we_base` package)
+**Fix:** Use `UpperCaseTextFormatter` or `AlphaNumericTextFormatter` from `package:we_base`
+
+### Rule 28: Route names (severity: WARNING)
+**Violation:** Hardcoded route strings in `WeNavigator.push(context, routeName: '/my-route')`
+**Check:** Grep for `routeName: '/'` or `routeName: "/"` in navigation calls
+**Fix:** Define route in `ModuleRouteNames` and use `ModuleRouteNames.myScreen`
 
 ## Output format
 
