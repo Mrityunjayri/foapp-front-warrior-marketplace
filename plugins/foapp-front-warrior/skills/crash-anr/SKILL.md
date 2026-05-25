@@ -336,55 +336,148 @@ End with: **"Approve this fix? Or need changes to the approach?"**
 
 Once approved, apply the fix following ALL project conventions:
 
-**Mandatory conventions (same as build-feature):**
-- `WeText(...)` not raw `Text(...)`
-- `WEColors` / `AssetsColors` — never `Color(0xff...)`
-- `WETheme.textStyleMedium14` — never inline `TextStyle(...)`, NEVER add `height:` in copyWith
-- `emptyWidget` — never `SizedBox.shrink()`
-- `WeNavigator.push/pop` — never raw `Navigator`
-- `WeInkWell(onTap:)` — never raw `GestureDetector` for simple taps
-- `AssetsHelper.svg()` / `.png()` — never raw `SvgPicture` / `Image.asset`
-- `showCustomBottomSheet(...)` — never raw `showModalBottomSheet`
-- `WEOpToast` for success/error — never raw `SnackBar`
-- `SnackBars(message:).show(context)` for BLoC error display
-- `WeLangKeysStore` or `RawStrings` — never hardcoded strings
-- `WEFlatButtonV2.primary(...)` — never raw `ElevatedButton`
+**Mandatory conventions — ALL fixes MUST follow these. No exceptions even for "just a crash fix":**
+
+**Widgets — NEVER use raw Flutter widgets:**
+- `WEScaffold(...)` — NEVER raw `Scaffold(...)`
+- `WEAppBar(title: ...)` — NEVER raw `AppBar(...)`
+- `WeText(...)` — NEVER raw `Text(...)` (exception: `text:` in `TextSpan` children)
+- `WeCardV2(...)` — NEVER raw `Card(...)`
+- `WeLoaderWidget()` — NEVER `CircularProgressIndicator()`
+- `WeConfirmationDialog.show(...)` — NEVER raw `AlertDialog(...)`
+- `WeDividerWidget()` — NEVER raw `Divider()`
+- `WeCheckboxWidget(...)` — NEVER raw `Checkbox(...)`
+- `WEFlatButtonV2.primary(...)` — NEVER raw `ElevatedButton` / `TextButton`
+- `WeTextFieldV2(...)` — NEVER raw `TextField` / `TextFormField`
+- `WeInkWell(onTap:)` — NEVER raw `GestureDetector(onTap:)` or `InkWell(...)` for simple taps
+- `emptyWidget` — NEVER `SizedBox.shrink()` or `SizedBox()` (empty)
+
+**Styling — NEVER hardcode:**
+- Colors: `WEColors.colorXXXXXX` or `AssetsColors.colorXXXXXX` — NEVER `Color(0xff...)`
+- Text styles: `WETheme.textStyleMedium14` — NEVER inline `TextStyle(...)`. NEVER add `height:` in `.copyWith()`
+- Spacing: `verticalSpace16` / `horizontalPadding16` — NEVER `SizedBox(height: 16)` or inline `EdgeInsets`
+
+**Strings — NEVER hardcode inline:**
+- Localized: `WeLangKeysStore.instance.myKey.string(context)`
+- Static English: `RawStrings.myKey` (in feature's `utils/raw_strings.dart`)
+- NEVER `WeText("Some text")` or `title: "Click here"` — always use WeLangKeysStore or RawStrings
+
+**Navigation:**
+- `WeNavigator.push/pop` — NEVER `Navigator.of(context)` or `Navigator.push/pop` directly
+- Route names: `ModuleRouteNames.myScreen` — NEVER hardcoded route strings
+
+**Images/Icons:**
+- `AssetsHelper.svg(assetName: SVGAssetsPath.xxx)` — NEVER raw `SvgPicture.asset(...)`
+- `AssetsHelper.png(assetName: PNGAssetsPath.xxx)` — NEVER raw `Image.asset(...)`
+- `AssetsHelper.pngNetwork(assetName: url)` — for network images from S3
+
+**Bottom sheets / Toasts / Errors:**
+- `showCustomBottomSheet(...)` — NEVER raw `showModalBottomSheet(...)`
+- `WEOpToast().showSuccessToast/showErrorToast` — for success/error feedback, NEVER raw `SnackBar`
+- `SnackBars(message:).show(context)` — for BLoC error side-effect states only
+
+**State management:**
+- BLoC events extend `Equatable`, states are `sealed class`
+- Error display: emit `ShowSnackBarState` from BLoC → show via `SnackBars` in `BlocListener`
+- NEVER call `SnackBars` directly from BLoC — always from UI layer
+
+**API / Models:**
+- Manual `fromJson`/`toJson` — NEVER `@JsonSerializable`, `@freezed`, or code generation
+- Repository extends `BaseApiRepository`, uses `getStateOf()` → `.when(onSuccess:, onFailed:)`
+- DI: register in `locator.dart` with `isRegistered` guard
+
+**Analytics:**
+- `WeLyticsEventManagerV2` with static singleton `MyEventManager.instance` — NEVER `locator<>`
+- `super.sendEvent(named params)` — NEVER `EventDTO`
+- `vehicleID` (capital D) — NEVER `vehicleId` (lowercase d)
+
+**If ANY widget/color/style/constant needed for the fix does NOT exist in the codebase → STOP and ask the developer. NEVER invent or use raw Flutter widgets.**
 
 ### Crash-specific fix patterns
 
 **Null Safety fixes:**
 ```dart
-// ❌ WRONG — just adding ?? everywhere
-model.name ?? ''
+// ❌ WRONG — hardcoded empty string fallback
+WeText(model.name ?? '', style: WETheme.textStyleMedium14)
 
-// ✅ CORRECT — handle at the right layer
-// If API field is optional → make model field nullable
-// If UI must show something → provide meaningful fallback from RawStrings
-// If business logic requires non-null → add validation in repository before emitting state
+// ❌ WRONG — using raw Text widget in the fix
+Text(model.name ?? 'Unknown')
+
+// ❌ WRONG — adding force unwrap (!) to "fix" a null issue
+final name = model.name!;  // This is what CAUSED the crash, don't add more
+
+// ✅ CORRECT — make model field nullable at data layer
+// In model fromJson:
+name: json['name'] as String?,
+
+// ✅ CORRECT — use RawStrings for fallback, WeText for display
+WeText(
+  model.name ?? RawStrings.defaultVehicleName,
+  style: WETheme.textStyleMedium14,
+)
+
+// ✅ CORRECT — validate in BLoC before emitting state (if field is required)
+if (response.data?.name == null) {
+  emit(ShowSnackBarState(RawStrings.vehicleDataError));
+  return;
+}
+emit(MyLoaded(response.data!));
 ```
 
 **ANR fixes:**
 ```dart
-// ❌ WRONG — wrapping in Future.delayed
+// ❌ WRONG — wrapping in Future.delayed (hides the problem)
 Future.delayed(Duration.zero, () => heavyOperation());
 
-// ✅ CORRECT — use compute for heavy operations
+// ❌ WRONG — raw SharedPreferences
+final prefs = await SharedPreferences.getInstance();
+
+// ✅ CORRECT — use WeOpSharedPreference (project wrapper)
+final value = await WeOpSharedPreference.getString('key');
+
+// ✅ CORRECT — use compute() for heavy JSON parsing
 final result = await compute(parseJsonInBackground, jsonString);
 
-// ✅ CORRECT — use async for I/O
-final prefs = await SharedPreferences.getInstance(); // NOT sync
+// ✅ CORRECT — move blocking I/O off main thread
+// In BLoC handler, emit loading state FIRST, then do async work:
+emit(MyLoading());
+final data = await repository.fetchHeavyData();
+emit(MyLoaded(data));
+
+// ✅ CORRECT — add buildWhen to reduce widget rebuilds
+BlocBuilder<MyBloc, MyState>(
+  buildWhen: (prev, curr) => curr is MyLoaded || curr is MyLoading,
+  builder: (context, state) { ... },
+)
 ```
 
 **Bridge fixes:**
 ```dart
-// ❌ WRONG — fix only one side
-// Flutter side: handle null
-// Android side: still sends null
+// ❌ WRONG — fix only Flutter side, ignore Android
+// Flutter: json['name'] as String? ?? ''
+// Android: still sends null (unfixed)
 
-// ✅ CORRECT — fix both sides to agree
-// Android: send default value if null → jsonObject.put("name", name ?: "")
-// Flutter: still handle null defensively → json['name'] as String? ?? ''
-// Both sides must be consistent
+// ❌ WRONG — hardcode fallback string inline
+json['name'] as String? ?? 'Unknown'
+
+// ✅ CORRECT — fix BOTH sides + use RawStrings for fallback
+
+// Android side (Kotlin) — send default if null:
+jsonObject.put("name", name ?: "")
+
+// Flutter side (Dart) — still handle null defensively:
+name: json['name'] as String?,
+
+// Flutter UI — use RawStrings for display fallback:
+WeText(
+  model.name ?? RawStrings.unknownVehicle,
+  style: WETheme.textStyleMedium14,
+)
+
+// ALWAYS verify JSON keys match exactly on both sides
+// Android: jsonObject.put("vehicle_id", vehicleId)
+// Flutter: vehicleId: json['vehicle_id'] as String?
+// Key mismatch = silent null = crash later
 ```
 
 **State lifecycle fixes:**
@@ -473,11 +566,11 @@ ANRs require a different analysis approach than crashes because there's no "cras
 
 | Pattern | Where to look | Fix |
 |---------|--------------|-----|
-| SharedPreferences sync read at startup | `initializeDependencies`, `locator.dart` | Make async, use `await` |
+| `WeOpSharedPreference` sync read at startup | `initializeDependencies`, `locator.dart` | Make async, use `await`. NEVER use raw `SharedPreferences.getInstance()` — use `WeOpSharedPreference` |
 | Large JSON parse on main thread | `fromJson` on large API responses | Use `compute()` for lists > 100 items |
 | MethodChannel blocking call | `invokeMethod` without timeout | Add timeout, handle `PlatformException` |
 | Heavy BlocBuilder rebuild | Widget tree inside `BlocBuilder` | Add `buildWhen`, extract const widgets |
-| Image loading without cache/resize | `Image.network` with large images | Use `CachedNetworkImage` with `maxWidth`/`maxHeight` |
+| Image loading without cache/resize | Network images with large dimensions | Use `CachedNetworkImage` with `maxWidth`/`maxHeight`. For app assets use `AssetsHelper.pngNetwork()` — NEVER raw `Image.network` for app icons |
 | Sync DB access on main thread | Direct Hive/SQLite read in BLoC handler | Use async read, add loading state |
 
 ---
