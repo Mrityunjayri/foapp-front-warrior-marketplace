@@ -499,26 +499,37 @@ class ShowSnackBarState extends MyState {
 }
 ```
 
-**BLoC**:
+**BLoC** (using current `ResponseState` pattern):
 ```dart
 class MyBloc extends Bloc<MyEvent, MyState> {
-  final MyRepository repository;
+  final MyRepository _repository;
 
-  MyBloc({required this.repository}) : super(MyInitial()) {
+  MyBloc({required MyRepository repository})
+      : _repository = repository,
+        super(MyInitial()) {
     on<LoadDataEvent>(_onLoad);
   }
 
   Future<void> _onLoad(LoadDataEvent event, Emitter<MyState> emit) async {
     emit(MyLoading());
-    try {
-      final result = await repository.fetchData(event.id);
-      await result.when(
-        onSuccess: (res) => emit(MyLoaded(res.response!.data!)),
-        onFailed: (_) => emit(MyError()),
-      );
-    } catch (_) {
-      emit(MyError());
-    }
+    final response = await _repository.fetchData(event.id);
+    response.when(
+      onSuccess: (SuccessResponse<BaseAPIResponse<MyModel>> success) {
+        final data = success.response?.data;
+        if (data != null) {
+          emit(MyLoaded(data));
+        } else {
+          emit(ShowSnackBarState(
+            success.response?.message ?? RawStrings.somethingWentWrong,
+          ));
+        }
+      },
+      onFailed: (failed) {
+        emit(ShowSnackBarState(
+          failed.exception.message ?? RawStrings.somethingWentWrong,
+        ));
+      },
+    );
   }
 }
 ```
@@ -566,22 +577,26 @@ abstract class MyApiService {
 **Repository Interface** (domain layer):
 ```dart
 abstract class MyRepository {
-  Future<DataState<BaseAPIResponse<MyModel>>> fetchData(String param);
+  Future<ResponseState<BaseAPIResponse<MyModel>>> fetchData(String param);
 }
 ```
 
-**Repository Implementation** (data layer):
+**Repository Implementation** (data layer) — use `handleResponse` (current pattern):
 ```dart
 class MyRepositoryImpl extends BaseApiRepository implements MyRepository {
   final MyApiService _api;
   MyRepositoryImpl(this._api);
 
   @override
-  Future<DataState<BaseAPIResponse<MyModel>>> fetchData(String param) {
-    return getStateOf(request: () => _api.fetchData(param));
+  Future<ResponseState<BaseAPIResponse<MyModel>>> fetchData(String param) {
+    return handleResponse<BaseAPIResponse<MyModel>>(
+      () => _api.fetchData(param),
+    );
   }
 }
 ```
+
+> **Note:** Older features use `getStateOf` + `DataState` (legacy). New code MUST use `handleResponse` + `ResponseState`. See Section 30 for full details.
 
 **UseCase** (domain layer):
 ```dart
@@ -589,7 +604,7 @@ class MyUseCase {
   final MyRepository _repository;
   MyUseCase(this._repository);
 
-  Future<DataState<BaseAPIResponse<MyModel>>> call(String param) {
+  Future<ResponseState<BaseAPIResponse<MyModel>>> call(String param) {
     return _repository.fetchData(param);
   }
 }
@@ -1184,38 +1199,114 @@ EventTransformer<E> restartableDebounce<E>(Duration duration) {
 
 ---
 
-## 30. DataState Pattern — API Response Handling
+## 30. API Response Handling — ResponseState + handleResponse (Current) vs DataState + getStateOf (Legacy)
 
-### Repository returns `DataState<T>`, BLoC uses `.when()`:
+This project has **two API response patterns**. New code MUST use `handleResponse` + `ResponseState`. The old `getStateOf` + `DataState` pattern exists in older features but is deprecated.
+
+All API base classes come from `package:we_rest` (private pub), re-exported via `package:we_base/we_base_bridge.dart`.
+
+### ✅ CURRENT Pattern — `handleResponse` + `ResponseState` (use this for ALL new code)
+
+**Repository implementation:**
+```dart
+class MyRepositoryImpl extends BaseApiRepository implements MyRepository {
+  final MyApiService _api;
+  MyRepositoryImpl(this._api);
+
+  @override
+  Future<ResponseState<BaseAPIResponse<MyModel>>> fetchData(String param) {
+    return handleResponse<BaseAPIResponse<MyModel>>(
+      () => _api.fetchData(param),
+    );
+  }
+}
+```
+
+**Repository interface (domain layer):**
+```dart
+abstract class MyRepository {
+  Future<ResponseState<BaseAPIResponse<MyModel>>> fetchData(String param);
+}
+```
+
+**BLoC — Option A: `.when()` callback (recommended for simple cases):**
+```dart
+final response = await _repository.fetchData(param);
+response.when(
+  onSuccess: (SuccessResponse<BaseAPIResponse<MyModel>> success) {
+    final data = success.response?.data;
+    if (data != null) {
+      emit(MyLoaded(data));
+    } else {
+      emit(ShowSnackBarState(success.response?.message ?? RawStrings.somethingWentWrong));
+    }
+  },
+  onFailed: (failed) {
+    emit(ShowSnackBarState(failed.exception.message ?? RawStrings.somethingWentWrong));
+  },
+);
+```
+
+**BLoC — Option B: Type check with `is SuccessResponse` (when you need more control):**
+```dart
+final response = await _repository.fetchData(param);
+if (response is SuccessResponse<BaseAPIResponse<MyModel>>) {
+  if (response.response?.data != null) {
+    emit(MyLoaded(response.response!.data!));
+  } else {
+    emit(ShowSnackBarState(response.response?.message ?? RawStrings.somethingWentWrong));
+  }
+}
+```
+
+**ResponseState classes (from `package:we_rest`):**
+```dart
+ResponseState<T>       // base sealed class
+SuccessResponse<T>     // holds response data — access via .response
+FailureResponse<T>     // holds exception — access via .exception
+```
+
+### ❌ LEGACY Pattern — `getStateOf` + `DataState` (do NOT use for new code)
+
+This pattern exists in older features (buy-sell-truck, lubricants, older gps_route code). It still works but is deprecated.
 
 ```dart
-// In Repository implementation (extends BaseApiRepository):
+// OLD — do NOT use for new features
 Future<DataState<BaseAPIResponse<MyModel>>> fetchData(String param) {
   return getStateOf(request: () => _api.fetchData(param));
 }
 
-// In BLoC — handle with .when():
+// OLD BLoC handling
 final result = await repository.fetchData(param);
 await result.when(
   onSuccess: (successResponse) {
     emit(MyLoaded(successResponse.response!.data!));
   },
   onFailed: (failedResponse) {
-    emit(ShowSnackBarState('Error occurred'));
+    emit(ShowSnackBarState(RawStrings.errorOccurred));
   },
 );
 ```
 
-### DataState classes:
+**DataState classes (legacy):**
 ```dart
+DataState<T>     // base class
 DataSuccess<T>   // holds response data
 DataFailed<T>    // holds DioException
 DataNotSet<T>    // initial/unset state
 ```
 
+### When to use which:
+- **New features** → ALWAYS use `handleResponse` + `ResponseState`
+- **Bug fixes in existing code** → use whichever pattern the file already uses (don't mix patterns in one file)
+- **If adding a new API call to a file that uses old pattern** → ask the developer whether to use old or new pattern for consistency
+
 ### NEVER:
-- Use raw `try-catch` on API calls without `DataState` — use `getStateOf()` in BaseApiRepository
-- Access `response.response!.data!` without null check inside `onSuccess`
+- Use `getStateOf` + `DataState` in new features — use `handleResponse` + `ResponseState`
+- Use raw `try-catch` on API calls without `ResponseState`/`DataState` — use `handleResponse`/`getStateOf` in BaseApiRepository
+- Access `response.response!.data!` without null check inside `onSuccess` — always check `response?.data != null` first
+- Mix `DataState` and `ResponseState` patterns in the same repository file
+- Use hardcoded error strings in `onFailed` — use `RawStrings.myErrorKey` or `WeLangKeysStore`
 
 ---
 

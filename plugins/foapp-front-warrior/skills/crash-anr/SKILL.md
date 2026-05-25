@@ -383,7 +383,7 @@ Once approved, apply the fix following ALL project conventions:
 
 **API / Models:**
 - Manual `fromJson`/`toJson` — NEVER `@JsonSerializable`, `@freezed`, or code generation
-- Repository extends `BaseApiRepository`, uses `getStateOf()` → `.when(onSuccess:, onFailed:)`
+- Repository extends `BaseApiRepository`, uses `handleResponse()` → `ResponseState<T>` → `.when(onSuccess:, onFailed:)` for NEW code. Legacy code uses `getStateOf()` → `DataState<T>` — when fixing bugs in legacy files, match the existing pattern
 - DI: register in `locator.dart` with `isRegistered` guard
 
 **Analytics:**

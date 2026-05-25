@@ -245,7 +245,7 @@ Once approved, generate code file by file. For EACH file:
 
 **State management:** BLoC with events extending `Equatable`, sealed state classes.
 
-**API:** Retrofit service → abstract Repository → impl extends BaseApiRepository → UseCase.
+**API:** Retrofit service → abstract Repository (returns `ResponseState<T>`) → impl extends BaseApiRepository (uses `handleResponse`) → UseCase. NEVER use deprecated `getStateOf`/`DataState` in new features.
 
 **Models:** Manual `fromJson`/`toJson`. No code generation (no freezed, no json_serializable).
 

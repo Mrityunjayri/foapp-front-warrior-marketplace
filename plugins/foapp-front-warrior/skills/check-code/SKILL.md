@@ -122,9 +122,14 @@ Check each rule below. For every violation found, report: file, line number (if 
 **Fix:** Add Equatable extension, convert to sealed classes
 
 ### Rule 19: API pattern (severity: WARNING)
-**Violation:** API calls not following Retrofit → Repository → UseCase pattern
+**Violation A:** API calls not following Retrofit → Repository → UseCase pattern
 **Check:** Look for direct Dio calls outside of repository implementations
 **Fix:** Restructure following Clean Architecture layers
+
+**Violation B:** New code using deprecated `getStateOf` + `DataState` instead of current `handleResponse` + `ResponseState`
+**Check:** In NEW files (not existing legacy code), grep for `getStateOf`, `DataState<`, `DataSuccess`, `DataFailed`
+**Fix:** Replace with `handleResponse` + `ResponseState<T>` pattern. Repository returns `ResponseState<BaseAPIResponse<T>>`, BLoC uses `response.when(onSuccess:, onFailed:)` or `is SuccessResponse<T>` type check
+**Exception:** Existing files that already use `getStateOf`/`DataState` pattern — don't mix patterns in the same file. When fixing a bug in such a file, use the same pattern the file already uses
 
 ### Rule 20: Models (severity: WARNING)
 **Violation:** Using `@JsonSerializable`, `@freezed`, or code generation for models
