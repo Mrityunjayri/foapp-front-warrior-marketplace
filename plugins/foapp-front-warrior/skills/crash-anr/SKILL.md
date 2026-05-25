@@ -1,0 +1,453 @@
+---
+name: crash-anr
+description: >
+  Deep analysis and fix for production crashes and ANRs from Firebase Crashlytics or Sentry.
+  Use when the user says "crash fix", "ANR fix", "production crash", "Crashlytics issue",
+  "Sentry error", "app is crashing", "app not responding", or provides a Firebase/Sentry
+  error link or stack trace. Performs deep RCA across both Flutter and Android repos,
+  presents analysis for approval, then applies the fix following all project conventions.
+metadata:
+  version: "1.0.0"
+---
+
+# Crash & ANR Analyzer — Deep RCA + Fix (Flutter + Android Hybrid)
+
+Analyze production crashes and ANRs from Firebase Crashlytics or Sentry across the **hybrid OperatorApp**. This is a dual-repo project: Android (Kotlin) is the host, Flutter runs inside via MethodChannel. Both sides report errors to Firebase Crashlytics and Sentry.
+
+The skill performs **deep-level root cause analysis** — it doesn't just find the crash line, it traces the entire execution path to identify *why* the crash happened, what conditions lead to it, and whether the same pattern exists elsewhere.
+
+---
+
+## Input
+
+Accept one or more of (more = faster diagnosis):
+
+1. **Firebase Crashlytics link** — URL to the crash/ANR cluster in Firebase console
+2. **Sentry link** — URL to the Sentry issue or event
+3. **Raw stack trace** — pasted directly in chat (Flutter Dart or Android Kotlin/Java)
+4. **Error message** — the exact error text (e.g., `Null check operator used on a null value`)
+5. **ANR trace** — `main` thread dump showing where the app froze
+6. **Crash frequency** — how many users affected, which app versions, which devices (helps prioritize)
+7. **Jira ticket** — link to the production bug ticket (read via Atlassian connector)
+
+If the user provides a Firebase/Sentry URL, use the browser or web tools to read the crash details. If that's not possible, ask the user to paste the full stack trace and error metadata.
+
+---
+
+## Phase 1: Stack Trace Parsing & Classification
+
+### Step 1 — Parse the crash/ANR data
+
+Extract from the provided input:
+
+| Field | What to extract |
+|-------|----------------|
+| **Error type** | Exception class (e.g., `NullPointerException`, `PlatformException`, `StateError`, `ANR`) |
+| **Error message** | Full message string |
+| **Stack frames** | Every frame with file, line, method — prioritize app frames over framework/library frames |
+| **Platform** | Flutter (Dart), Android (Kotlin/Java), or Bridge (MethodChannel) |
+| **Thread** | Main thread, Isolate, or background thread (critical for ANR classification) |
+| **Device/OS** | Android version, device model, RAM (for device-specific issues) |
+| **App version** | Which build/version the crash occurs in |
+| **Frequency** | Number of occurrences, affected users % |
+
+### Step 2 — Classify the issue
+
+Determine the category. This affects the analysis approach:
+
+#### Crash Categories
+
+| Category | Indicators | Analysis approach |
+|----------|-----------|-------------------|
+| **Null Safety Crash** | `Null check operator used on a null value`, `type 'Null' is not a subtype of type 'X'`, `NoSuchMethodError: method not found on null` | Trace data flow backwards from crash site to find where null originates — usually API response missing a field or MethodChannel returning null |
+| **Type Cast Crash** | `type 'X' is not a subtype of type 'Y'`, `ClassCastException` | Check `fromJson` models — API response type changed or field is wrong type |
+| **Range/Index Crash** | `RangeError (index)`, `IndexOutOfBoundsException` | Check list operations — usually empty list accessed by index, or API returns fewer items than expected |
+| **State Crash** | `Bad state: Cannot add event after closing`, `Bad state: Stream has already been listened to` | BLoC lifecycle issue — event added after dispose, or stream controller not properly closed |
+| **Platform Crash** | `PlatformException`, `MissingPluginException` | MethodChannel issue — handler not registered, channel name mismatch, or native code crash |
+| **Memory Crash** | `OutOfMemoryError`, large bitmap issues, device-specific OOM | Image loading without resize, unbounded list growth, or memory leak in long-running screen |
+| **Unhandled Async** | `Unhandled Exception`, `Future` errors without catch | Missing try-catch on async operations, especially API calls |
+| **Bridge Crash** | Stack trace spans both Dart and Kotlin/Java frames | Data serialization mismatch, null sent across bridge, or handler throwing on one side |
+
+#### ANR Categories
+
+| Category | Indicators | Analysis approach |
+|----------|-----------|-------------------|
+| **Main Thread I/O** | ANR trace shows file/network ops on main thread | Find the blocking call — usually synchronous SharedPreference read, database query, or file I/O on main thread |
+| **Heavy Computation** | ANR trace shows JSON parsing, list sorting, image processing on main | Large data processing on main thread — should be moved to `compute()` or isolate |
+| **Lock Contention** | ANR trace shows `Object.wait()`, `synchronized` blocks (Android) | Multiple threads competing for same lock — usually DB access pattern |
+| **MethodChannel Blocking** | ANR trace shows `invokeMethod` waiting for response | Flutter calling Android synchronously, or Android handler taking too long to respond |
+| **Layout Jank** | ANR during `onMeasure`/`onLayout` (Android), or build method taking >16ms (Flutter) | Deep widget tree, heavy build method, or unnecessary rebuilds in BlocBuilder |
+| **DI Initialization** | ANR during `locator` registration or `initializeDependencies` | Too many synchronous registrations at startup — check locator.dart for blocking calls |
+
+---
+
+## Phase 2: Deep Root Cause Analysis
+
+### Step 3 — Locate crash site in codebase
+
+Using the stack trace frames, find the exact crash location:
+
+**For Flutter crashes:**
+```
+1. Map stack frame → file path in OperatorAppFlutter repo
+   e.g., "package:gps_route_v2/gps_route/presentation/bloc/my_bloc.dart:142"
+   → apps/gps_route/lib/gps_route/presentation/bloc/my_bloc.dart line 142
+
+2. Read the file at the crash line + 30 lines of context above and below
+
+3. Identify the immediate cause (the actual failing operation)
+```
+
+**For Android crashes:**
+```
+1. Map stack frame → file path in OperatorApp repo
+   e.g., "com.wheelseye.operator.feature.MyActivity.onCreate(MyActivity.kt:87)"
+   → app/src/main/java/com/wheelseye/operator/feature/MyActivity.kt line 87
+
+2. Read the file at the crash line + 30 lines of context
+
+3. Identify the immediate cause
+```
+
+**For Bridge crashes:**
+```
+1. Find both the Flutter frame AND Android frame in the stack
+2. Read both files — the crash is at the boundary
+3. Compare the data being sent (Android) vs data being received (Flutter) or vice versa
+```
+
+### Step 4 — Trace execution path backwards
+
+THIS IS THE DEEP ANALYSIS. Don't stop at the crash line — trace backwards to find the TRUE root cause.
+
+**Trace chain for Flutter:**
+```
+Crash site (e.g., null access in widget)
+  ← Where did the null value come from? (BLoC state field)
+    ← Which BLoC event handler set this state? (check emit calls)
+      ← What API/UseCase response led to this? (repository call)
+        ← What did the API actually return? (check fromJson mapping)
+          ← Is the API contract wrong, or is the model missing null handling?
+```
+
+**Trace chain for Android:**
+```
+Crash site (e.g., NPE in Activity)
+  ← Where was the null variable supposed to be set? (onCreate, onNewIntent, savedInstanceState)
+    ← Was it set via Intent extras from Flutter's MethodChannel call?
+      ← What data did Flutter send? (check the invokeMethod call)
+        ← Was the data null at the Flutter side before sending?
+```
+
+**Trace chain for ANR:**
+```
+Frozen method (e.g., SharedPreferences.getString on main thread)
+  ← Who calls this method? (trace callers)
+    ← Is this called during screen init? (initState, onCreate)
+      ← Can this be made async or moved off main thread?
+        ← What data does it load and who consumes it?
+```
+
+At each level of the trace, **read the actual code** — do not assume. Use `Read` and `Grep` tools to follow the chain.
+
+### Step 5 — Check for pattern recurrence
+
+After finding the root cause, check if the SAME pattern exists elsewhere:
+
+```bash
+# If root cause is missing null check on API field:
+Grep for the same model class usage across all features
+
+# If root cause is unsafe ! operator:
+Grep for the same variable access pattern in similar screens
+
+# If root cause is MethodChannel data mismatch:
+Check bridge-map.md for all channels using the same data structure
+
+# If root cause is main thread blocking:
+Grep for similar blocking calls (SharedPreferences.getInstance sync, jsonDecode on main)
+```
+
+Report ALL occurrences — the developer decides which to fix now vs later.
+
+---
+
+## Phase 3: RCA Report & Approval
+
+### Step 6 — Present the full RCA to the developer
+
+Present the analysis in this format:
+
+```
+## Crash/ANR Root Cause Analysis
+
+### Issue Summary
+- **Type:** Crash / ANR
+- **Category:** [from classification table]
+- **Error:** [exact error message]
+- **Platform:** Flutter / Android / Bridge
+- **Affected:** [X users, Y% of sessions, versions A-B]
+- **Severity:** Critical / High / Medium
+
+### Stack Trace (key frames)
+```
+[Top 5-10 relevant frames from the stack trace, with file paths mapped to repo]
+```
+
+### Execution Trace (deep analysis)
+```
+1. CRASH SITE: file.dart:142 — `model.name!` throws because `name` is null
+2. STATE SOURCE: my_bloc.dart:87 — `emit(MyLoaded(response.data))` passes null `name` field
+3. API RESPONSE: my_repository_impl.dart:34 — `getStateOf()` succeeds but `name` field is null in JSON
+4. MODEL: my_model.dart:12 — `fromJson` maps `json['name']` but API sometimes omits this field
+5. ROOT CAUSE: API returns `name: null` for vehicles without registration. Model doesn't handle null.
+```
+
+### Root Cause
+[2-3 sentences: exactly what is wrong, why it happens, and under what conditions]
+
+### Proposed Fix
+
+**Files to change:**
+```
+Flutter (OperatorAppFlutter):
+├── apps/gps_route/lib/.../my_model.dart:12
+│   Change: `name: json['name']` → `name: json['name'] as String?`
+│   Why: Allow null from API response
+│
+├── apps/gps_route/lib/.../my_screen.dart:142
+│   Change: `model.name!` → `model.name ?? RawStrings.defaultVehicleName`
+│   Why: Handle null display gracefully instead of crashing
+
+Android (OperatorApp) [if bridge involved]:
+├── .../MyActivity.kt:87
+│   Change: [what changes]
+│   Why: [reason]
+```
+
+**Diff preview:**
+```dart
+// my_model.dart — BEFORE
+name: json['name'],
+
+// my_model.dart — AFTER
+name: json['name'] as String?,
+```
+
+```dart
+// my_screen.dart — BEFORE
+WeText(model.name!, style: WETheme.textStyleMedium14)
+
+// my_screen.dart — AFTER
+WeText(model.name ?? RawStrings.defaultVehicleName, style: WETheme.textStyleMedium14)
+```
+
+### Same Pattern Found Elsewhere
+```
+⚠ Same unsafe `!` on `name` field also found in:
+  - apps/gps_route/lib/.../vehicle_card_widget.dart:67
+  - apps/gps_route/lib/.../vehicle_detail_screen.dart:134
+  Should these be fixed too? (will not fix unless you approve)
+```
+
+### Side Effects Check
+- [What other screens/flows use this model — will the null type change break them?]
+- [Are there BLoC states that assume this field is non-null?]
+- [Does any MethodChannel bridge send this field — will it handle null?]
+```
+
+End with: **"Approve this fix? Or need changes to the approach?"**
+
+**Do NOT make any code changes until the developer explicitly approves.**
+
+---
+
+## Phase 4: Apply Fix
+
+### Step 7 — Fix with minimal changes
+
+Once approved, apply the fix following ALL project conventions:
+
+**Mandatory conventions (same as build-feature):**
+- `WeText(...)` not raw `Text(...)`
+- `WEColors` / `AssetsColors` — never `Color(0xff...)`
+- `WETheme.textStyleMedium14` — never inline `TextStyle(...)`, NEVER add `height:` in copyWith
+- `emptyWidget` — never `SizedBox.shrink()`
+- `WeNavigator.push/pop` — never raw `Navigator`
+- `WeInkWell(onTap:)` — never raw `GestureDetector` for simple taps
+- `AssetsHelper.svg()` / `.png()` — never raw `SvgPicture` / `Image.asset`
+- `showCustomBottomSheet(...)` — never raw `showModalBottomSheet`
+- `WEOpToast` for success/error — never raw `SnackBar`
+- `SnackBars(message:).show(context)` for BLoC error display
+- `WeLangKeysStore` or `RawStrings` — never hardcoded strings
+- `WEFlatButtonV2.primary(...)` — never raw `ElevatedButton`
+
+### Crash-specific fix patterns
+
+**Null Safety fixes:**
+```dart
+// ❌ WRONG — just adding ?? everywhere
+model.name ?? ''
+
+// ✅ CORRECT — handle at the right layer
+// If API field is optional → make model field nullable
+// If UI must show something → provide meaningful fallback from RawStrings
+// If business logic requires non-null → add validation in repository before emitting state
+```
+
+**ANR fixes:**
+```dart
+// ❌ WRONG — wrapping in Future.delayed
+Future.delayed(Duration.zero, () => heavyOperation());
+
+// ✅ CORRECT — use compute for heavy operations
+final result = await compute(parseJsonInBackground, jsonString);
+
+// ✅ CORRECT — use async for I/O
+final prefs = await SharedPreferences.getInstance(); // NOT sync
+```
+
+**Bridge fixes:**
+```dart
+// ❌ WRONG — fix only one side
+// Flutter side: handle null
+// Android side: still sends null
+
+// ✅ CORRECT — fix both sides to agree
+// Android: send default value if null → jsonObject.put("name", name ?: "")
+// Flutter: still handle null defensively → json['name'] as String? ?? ''
+// Both sides must be consistent
+```
+
+**State lifecycle fixes:**
+```dart
+// ❌ WRONG — just catching the error
+try { bloc.add(MyEvent()); } catch (_) {}
+
+// ✅ CORRECT — check lifecycle before adding event
+if (!bloc.isClosed) {
+  bloc.add(MyEvent());
+}
+
+// ✅ CORRECT — cancel subscriptions in dispose
+@override
+void dispose() {
+  _subscription?.cancel();
+  super.dispose();
+}
+```
+
+### Step 8 — Run compliance check
+
+After applying the fix, scan every changed file for:
+- Hardcoded colors → replace with constants
+- Hardcoded styles → replace with WETheme
+- Hardcoded strings → replace with WeLangKeysStore / RawStrings
+- Raw Flutter widgets → replace with project widgets
+- Missing null checks introduced by the fix
+
+If auto-fixable, fix silently. If needs developer input, flag it.
+
+---
+
+## Phase 5: Verification Report
+
+### Step 9 — Present the fix summary
+
+```
+## Fix Applied
+
+### Changes Made
+| File | Line | What Changed |
+|------|------|-------------|
+| my_model.dart | 12 | Made `name` field nullable (String?) |
+| my_screen.dart | 142 | Added null fallback with RawStrings |
+
+### Compliance Check
+✅ No convention violations in changed files
+
+### Crash Prevention Verification
+- [x] The null case that caused the crash is now handled
+- [x] The fix does not introduce new nullable access without checks
+- [x] No side effects on other screens using this model
+- [x] Bridge data contract unchanged (or updated on both sides)
+
+### Similar Patterns (not fixed — awaiting your decision)
+- vehicle_card_widget.dart:67 — same `name!` pattern
+- vehicle_detail_screen.dart:134 — same `name!` pattern
+
+Fix these too? Or track as separate tickets?
+```
+
+---
+
+## ANR-Specific Deep Analysis
+
+ANRs require a different analysis approach than crashes because there's no "crash line" — instead, the app is frozen.
+
+### ANR Analysis Steps
+
+1. **Read the thread dump** — find what the main thread is blocked on
+2. **Classify the block type:**
+   - **I/O block** — network call, file read, database query on main thread
+   - **Compute block** — JSON parsing, list sorting, image processing on main thread
+   - **Lock block** — waiting for a lock held by another thread
+   - **Bridge block** — `invokeMethod` waiting for response from the other platform
+   - **Layout block** — expensive widget tree rebuild
+
+3. **For I/O blocks:** Find the synchronous call and make it async
+4. **For Compute blocks:** Move to `compute()` isolate or optimize the algorithm
+5. **For Lock blocks:** Reduce lock scope or use async alternatives
+6. **For Bridge blocks:** Check if the handler on the other side is doing heavy work
+7. **For Layout blocks:** Identify the expensive widget, add `const`, reduce rebuilds, check `BlocBuilder` `buildWhen`
+
+### Common ANR Patterns in This Project
+
+| Pattern | Where to look | Fix |
+|---------|--------------|-----|
+| SharedPreferences sync read at startup | `initializeDependencies`, `locator.dart` | Make async, use `await` |
+| Large JSON parse on main thread | `fromJson` on large API responses | Use `compute()` for lists > 100 items |
+| MethodChannel blocking call | `invokeMethod` without timeout | Add timeout, handle `PlatformException` |
+| Heavy BlocBuilder rebuild | Widget tree inside `BlocBuilder` | Add `buildWhen`, extract const widgets |
+| Image loading without cache/resize | `Image.network` with large images | Use `CachedNetworkImage` with `maxWidth`/`maxHeight` |
+| Sync DB access on main thread | Direct Hive/SQLite read in BLoC handler | Use async read, add loading state |
+
+---
+
+## Strict Rules
+
+- NEVER apply fixes without developer approval — always present RCA first
+- NEVER refactor or improve code beyond what the crash/ANR fix requires
+- NEVER guess the root cause — trace the actual code path with Read/Grep tools
+- NEVER fix only one side of a bridge crash — always check and fix BOTH Android and Flutter sides
+- NEVER add blanket try-catch to suppress crashes — fix the actual root cause
+- NEVER add `!` (force unwrap) in a crash fix — that's likely what caused it
+- NEVER ignore "same pattern elsewhere" — always report it, let developer decide
+- For ANR fixes: NEVER just add `Future.delayed` — that hides the problem, doesn't fix it
+- For null fixes: handle at the CORRECT layer — model, repository, BLoC, or UI depending on where the null should be caught
+- Maximum diff should be minimal — if the crash has a 1-line fix, don't turn it into a 50-line refactor
+- If the fix requires architectural changes (e.g., "this entire screen needs to be rewritten"), STOP and tell the developer rather than making huge changes
+
+---
+
+## Integration with Project Error Handling
+
+This project uses both **Firebase Crashlytics** and **Sentry** for error reporting:
+
+**Flutter error handling (main.dart):**
+```dart
+FlutterError.onError = (errorDetails) {
+  Sentry.captureException(errorDetails.exception, stackTrace: errorDetails.stack);
+  FirebaseCrashlytics.instance.recordFlutterError(errorDetails, fatal: ...);
+};
+```
+
+**Sentry logging (for non-fatal issues):**
+```dart
+SentryLogger.instance.logError(SentryLogEntry(
+  message: 'Description of what went wrong',
+  attributes: [SentryLogAttribute(key: 'vehicleId', value: id)],
+));
+```
+
+When fixing a crash, consider whether the fix should also add Sentry logging for the edge case that caused it — so future occurrences of similar-but-not-identical issues are captured before they crash.
