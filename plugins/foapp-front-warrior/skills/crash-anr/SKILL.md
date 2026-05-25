@@ -18,19 +18,87 @@ The skill performs **deep-level root cause analysis** — it doesn't just find t
 
 ---
 
+## Prerequisites — MCP Connectors
+
+This skill works best with these connectors:
+
+| Source | Connection | How it works |
+|--------|-----------|--------------|
+| **Sentry** | MCP connector (auto-fetch) | Connects via official Sentry MCP. Skill auto-fetches issues, stack traces, affected users, releases — no copy-paste needed. Developer just says "fix the top crash" or gives an issue ID. |
+| **Firebase Crashlytics** | Manual paste | No MCP connector available. Developer copies stack trace from Firebase Console and pastes in chat. Skill handles the rest. |
+| **Jira** | MCP connector (Atlassian Rovo) | Auto-reads production bug tickets with crash details, steps to reproduce, and attached logs. |
+
+### First-time setup
+
+If the Sentry connector is not connected, prompt the developer:
+> "I can auto-fetch crash data from Sentry if you connect it. Want to set it up now?"
+> If yes → use `suggest_connectors` to show the Sentry connect button.
+> If no → fall back to manual paste mode for all sources.
+
+---
+
 ## Input
 
-Accept one or more of (more = faster diagnosis):
+The skill accepts input in **two modes**:
 
-1. **Firebase Crashlytics link** — URL to the crash/ANR cluster in Firebase console
-2. **Sentry link** — URL to the Sentry issue or event
-3. **Raw stack trace** — pasted directly in chat (Flutter Dart or Android Kotlin/Java)
-4. **Error message** — the exact error text (e.g., `Null check operator used on a null value`)
-5. **ANR trace** — `main` thread dump showing where the app froze
-6. **Crash frequency** — how many users affected, which app versions, which devices (helps prioritize)
-7. **Jira ticket** — link to the production bug ticket (read via Atlassian connector)
+### Mode A: Auto-fetch from Sentry (preferred)
 
-If the user provides a Firebase/Sentry URL, use the browser or web tools to read the crash details. If that's not possible, ask the user to paste the full stack trace and error metadata.
+Developer can say any of:
+- "Fix the top crash" / "What's crashing in production?"
+- "Fix Sentry issue OPERATOR-1234"
+- "Check crashes in the latest release"
+- "Show me ANRs from last 7 days"
+- A Sentry issue URL
+
+**Auto-fetch flow:**
+1. Use `find_issues` to search Sentry for unresolved crashes/ANRs in the project
+2. Use `get_issue_details` to pull full stack trace, error message, affected users, frequency, tags
+3. Use `find_releases` to check which release introduced the issue
+4. Present a summary of top issues and let developer pick which to analyze, OR auto-analyze if they specified a specific issue
+
+**Sentry MCP tools to use:**
+```
+find_issues       → search by query, project, status (unresolved), sort by frequency
+get_issue_details → full stack trace, tags, first/last seen, user count, events
+find_releases     → which version introduced the crash
+find_tags         → device, OS, app version breakdown
+```
+
+**Example auto-fetch flow:**
+```
+Developer: "What's crashing in production?"
+
+Skill:
+1. find_issues(query: "is:unresolved", sort: "freq", project: "op-android")
+2. Returns top 5 crashes with titles and user counts
+3. Shows developer:
+   "Here are the top 5 unresolved crashes:
+    1. NullPointerException in VehicleListingScreen (1,247 users)
+    2. PlatformException in MethodChannel handler (892 users)
+    3. StateError in MunshiBloc (456 users)
+    4. RangeError in FuelGuardWidget (234 users)
+    5. ANR in DashboardActivity (189 users)
+    Which one should I analyze?"
+
+Developer: "Fix #1"
+
+Skill:
+4. get_issue_details(issue_id) → gets full stack trace
+5. Proceeds to Phase 2 (Deep RCA)
+```
+
+### Mode B: Manual paste (Firebase Crashlytics or any source)
+
+Developer provides one or more of:
+1. **Firebase Crashlytics link** — URL to the crash/ANR cluster (developer copies stack trace from Firebase console)
+2. **Raw stack trace** — pasted directly (Flutter Dart or Android Kotlin/Java)
+3. **Error message** — exact error text (e.g., `Null check operator used on a null value`)
+4. **ANR trace** — `main` thread dump showing where the app froze
+5. **Crash frequency** — how many users affected, which app versions, which devices
+6. **Jira ticket** — link to the production bug ticket (auto-read via Atlassian connector)
+
+If the developer gives a Firebase Console URL, tell them:
+> "I can't access Firebase directly — please paste the full stack trace from the Crashlytics console. I'll handle the analysis from there."
 
 ---
 
