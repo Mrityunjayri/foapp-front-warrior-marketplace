@@ -1,7 +1,14 @@
 {
   "name": "foapp-build-server",
-  "version": "1.0.0",
-  "description": "Zero-dependency local MCP build server. No npm install needed.",
-  "main": "build-server.js",
-  "dependencies": {}
+  "version": "1.0.1",
+  "description": "Local MCP build server for FOAPPFrontWarrior plugin. Zero dependencies.",
+  "main": "index.js",
+  "bin": {
+    "foapp-build-server": "./index.js"
+  },
+  "keywords": ["mcp", "flutter", "android", "build-server", "claude"],
+  "author": "WheelsEye Engineering",
+  "license": "MIT",
+  "files": ["index.js"],
+  "engines": { "node": ">=18.0.0" }
 }
