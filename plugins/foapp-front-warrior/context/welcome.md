@@ -2,10 +2,22 @@
 
 **Tumhara AI coding assistant ready hai!** Ye plugin dono repos samajhta hai — OperatorApp (Android) + OperatorAppFlutter (Flutter).
 
+### 🔧 First time? Setup check
+
+**IMPORTANT — AI must check this at the start of EVERY first session with a new developer:**
+
+1. Call `detect_sdks` from the `foapp-build` MCP server
+2. **If it responds** → check if paths are correct → confirm with developer → done
+3. **If it does NOT respond** → trigger `/setup` skill to guide developer through one-time install
+4. **If any path is "NOT FOUND"** → ask developer for the correct path → save config
+
+This setup happens ONCE. After that, AI can build, analyze, and fix compile errors automatically.
+
 ### Quick start — ye commands yaad rakho:
 
 | Command | Kya karta hai | Kab use karo |
 |---------|--------------|--------------|
+| `/setup` | One-time setup — SDK paths detect + configure (auto-triggers on first use) | Pehli baar plugin install karo tab |
 | `/sync` | Dono repos scan karke knowledge update karta hai | Sprint start pe ya major merge ke baad |
 | `/build-feature` | PRD + Figma se production code banata hai | Naya feature develop karna ho |
 | `/check-code` | Code conventions check karta hai (39 rules — Dart + Kotlin + Bridge) | PR bhejne se pehle |

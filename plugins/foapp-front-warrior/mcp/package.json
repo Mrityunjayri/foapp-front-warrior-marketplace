@@ -1,0 +1,15 @@
+{
+  "name": "foapp-build-server",
+  "version": "1.0.0",
+  "description": "Local MCP build server for FOAPPFrontWarrior plugin — runs flutter analyze, gradle build on dev machine",
+  "main": "build-server.js",
+  "bin": {
+    "foapp-build-server": "./build-server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0"
+  },
+  "scripts": {
+    "start": "node build-server.js"
+  }
+}

@@ -1,9 +1,16 @@
 {
   "name": "foapp-front-warrior",
-  "version": "0.4.0",
-  "description": "AI-powered frontend development assistant for WheelsEye OperatorApp hybrid (Android Kotlin + Flutter). 10 skills: sync repos, build features from PRD+Figma, validate code conventions (39 rules), trace flows, find widgets, fix bugs, crash/ANR deep RCA from Sentry+Firebase, add analytics events, optimize code, and upgrade platforms/packages.",
+  "version": "0.5.1",
+  "description": "AI-powered frontend development assistant for WheelsEye OperatorApp hybrid (Android Kotlin + Flutter). 11 skills + local build server + run_terminal. Auto-detects SDK on first use, builds APK, catches compile errors, fixes them — zero manual work.",
   "author": {
     "name": "WheelsEye Engineering"
+  },
+  "mcpServers": {
+    "foapp-build": {
+      "command": "node",
+      "args": ["${PLUGIN_DIR}/mcp/build-server.js"],
+      "description": "Local build server — runs flutter analyze, gradle build on your machine. Required for auto-compile verification."
+    }
   },
   "keywords": [
     "flutter",
@@ -15,6 +22,7 @@
     "analytics",
     "optimization",
     "upgrade",
+    "build-verification",
     "operator-app",
     "wheelseye"
   ]

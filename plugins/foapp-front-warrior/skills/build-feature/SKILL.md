@@ -333,39 +333,45 @@ For EACH generated file, verify:
 1. Fix it automatically if the correct answer is clear
 2. If ambiguous → flag it for the developer (don't guess)
 
-### Layer 3: Build Command Verification (if Flutter SDK available)
-Check if Flutter SDK is accessible by running:
-```bash
-flutter --version 2>/dev/null
+### Layer 3: Build Verification via Local MCP (auto-compile check)
+
+The plugin includes a **Local Build MCP Server** (`foapp-build`) that runs on the developer's machine. Use it to trigger real builds.
+
+**Step 1 — Check if MCP is available:**
+Try calling `detect_sdks` tool from the `foapp-build` MCP server. If it responds, the build server is running.
+
+**Step 2 — If MCP IS available (build server running):**
+```
+1. Call foapp-build.flutter_analyze(paths: ["apps/<feature>/lib/"])
+2. Read the output — parse errors and warnings
+3. For EACH error:
+   - Read the file and line number
+   - Fix the error
+   - Re-run flutter_analyze on the fixed file
+4. Loop until: "No issues found!"
+
+5. If Android/Kotlin files were generated:
+   Call foapp-build.gradle_build(task: "compileDebugKotlin")
+   - Read errors → fix → re-run → loop until success
+
+6. Call foapp-build.dart_format(paths: [list of all generated files])
 ```
 
-**If Flutter SDK IS available (Claude Code CLI):**
-```bash
-# Run Dart analysis on changed files
-cd <flutter_project_path>
-flutter analyze <path/to/changed/files>
-
-# If errors found → read errors → fix code → re-run analyze
-# Loop until: "No issues found!"
+**Step 3 — If MCP is NOT available (first time / not set up):**
+Tell the developer:
 ```
+⚠ Build verification needs the Local Build Server.
+One-time setup (2 minutes):
+  1. Open terminal
+  2. cd <plugin_dir>/mcp && npm install
+  3. Restart Claude Desktop
 
-```bash
-# For Android changes, run Gradle check
-cd <android_project_path>
-./gradlew compileDebugKotlin 2>&1 | head -50
-
-# If errors found → read errors → fix code → re-run
-```
-
-**If Flutter SDK is NOT available (Cowork Desktop):**
-Skip this layer — Layer 1 and Layer 2 already catch most issues.
-After presenting code, tell the developer:
-```
-⚠ Build verification skipped (Flutter SDK not available in sandbox).
-Run these commands locally to verify:
+After that, I'll automatically build and fix compile errors.
+For now, run manually:
   cd ~/OperatorAppFlutter && flutter analyze apps/<feature>/lib/
-  cd ~/OperatorApp && ./gradlew compileDebugKotlin
 ```
+
+**CRITICAL: The auto-fix loop must continue until ZERO compile errors. Never present code with known compile errors.**
 
 ### Verification report (show to developer AFTER all layers pass):
 ```
