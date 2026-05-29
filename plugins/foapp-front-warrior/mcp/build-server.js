@@ -1,41 +1,35 @@
 #!/usr/bin/env node
 
 /**
- * FOAPPFrontWarrior Local Build MCP Server
+ * FOAPPFrontWarrior Local Build MCP Server — ZERO DEPENDENCIES
  *
- * Runs on the developer's local machine. Provides build/analyze tools
- * that Cowork Desktop calls via MCP protocol.
+ * Implements MCP protocol over stdio using pure Node.js.
+ * No npm install needed — works immediately after plugin install.
  *
  * Tools:
  *   - detect_sdks        : Auto-detect Flutter & Android SDK paths
+ *   - save_config         : Save SDK/project paths to config
  *   - flutter_analyze     : Run flutter analyze on specified files/dirs
  *   - flutter_pub_get     : Run flutter pub get in project
  *   - gradle_build        : Run gradle compileDebugKotlin
  *   - dart_format         : Run dart format on files
- *   - run_build_command   : Run any allowed build command
+ *   - run_terminal        : Run any safe terminal command
  */
 
-const { Server } = require("@modelcontextprotocol/sdk/server/index.js");
-const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
-const {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} = require("@modelcontextprotocol/sdk/types.js");
-const { execSync, exec } = require("child_process");
+const { execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const readline = require("readline");
 
-// --- Config ---
+// ============================================================
+// CONFIG
+// ============================================================
 const CONFIG_DIR = path.join(os.homedir(), ".foapp-build-server");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
 function loadConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")); } catch { return {}; }
 }
 
 function saveConfig(config) {
@@ -43,452 +37,329 @@ function saveConfig(config) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
-// --- SDK Detection ---
+// ============================================================
+// SDK DETECTION
+// ============================================================
 function detectFlutterSDK() {
-  const paths = [
-    // Common Flutter install locations
+  try {
+    const p = execSync("which flutter 2>/dev/null || where flutter 2>nul", {
+      encoding: "utf-8", timeout: 5000
+    }).trim();
+    if (p) {
+      const resolved = fs.realpathSync(p);
+      const root = path.dirname(path.dirname(resolved));
+      if (fs.existsSync(path.join(root, "bin", "flutter"))) return root;
+    }
+  } catch {}
+  const candidates = [
     process.env.FLUTTER_ROOT,
     path.join(os.homedir(), "flutter"),
     path.join(os.homedir(), "development", "flutter"),
-    path.join(os.homedir(), "dev", "flutter"),
     path.join(os.homedir(), "fvm", "default"),
     "/usr/local/flutter",
-    "/opt/flutter",
-    // macOS
     path.join(os.homedir(), "Library", "flutter"),
   ].filter(Boolean);
-
-  // Try which/where first
-  try {
-    const flutterPath = execSync("which flutter 2>/dev/null || where flutter 2>nul", {
-      encoding: "utf-8",
-      timeout: 5000,
-    }).trim();
-    if (flutterPath) {
-      // Resolve symlinks and get SDK root
-      const resolved = fs.realpathSync(flutterPath);
-      const sdkRoot = path.dirname(path.dirname(resolved));
-      if (fs.existsSync(path.join(sdkRoot, "bin", "flutter"))) return sdkRoot;
-    }
-  } catch {}
-
-  for (const p of paths) {
-    if (p && fs.existsSync(path.join(p, "bin", "flutter"))) return p;
+  for (const p of candidates) {
+    if (fs.existsSync(path.join(p, "bin", "flutter"))) return p;
   }
   return null;
 }
 
 function detectAndroidSDK() {
-  const paths = [
-    process.env.ANDROID_HOME,
-    process.env.ANDROID_SDK_ROOT,
+  const candidates = [
+    process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT,
     path.join(os.homedir(), "Android", "Sdk"),
     path.join(os.homedir(), "Library", "Android", "sdk"),
     path.join(os.homedir(), "AppData", "Local", "Android", "Sdk"),
-    "/usr/local/android-sdk",
   ].filter(Boolean);
-
-  for (const p of paths) {
-    if (p && fs.existsSync(p)) return p;
-  }
+  for (const p of candidates) { if (fs.existsSync(p)) return p; }
   return null;
 }
 
 function detectProjectPaths() {
   const home = os.homedir();
-  const candidates = [
+  const flutterCandidates = [
     path.join(home, "OperatorAppFlutter"),
     path.join(home, "StudioProjects", "OperatorAppFlutter"),
     path.join(home, "Projects", "OperatorAppFlutter"),
     path.join(home, "work", "OperatorAppFlutter"),
   ];
-  const flutterProject = candidates.find((p) =>
-    fs.existsSync(path.join(p, "pubspec.yaml"))
-  );
-
   const androidCandidates = [
     path.join(home, "OperatorApp"),
     path.join(home, "StudioProjects", "OperatorApp"),
     path.join(home, "Projects", "OperatorApp"),
     path.join(home, "work", "OperatorApp"),
   ];
-  const androidProject = androidCandidates.find((p) =>
-    fs.existsSync(path.join(p, "build.gradle")) ||
-    fs.existsSync(path.join(p, "build.gradle.kts"))
-  );
-
-  return { flutterProject, androidProject };
+  return {
+    flutterProject: flutterCandidates.find(p => fs.existsSync(path.join(p, "pubspec.yaml"))) || null,
+    androidProject: androidCandidates.find(p =>
+      fs.existsSync(path.join(p, "build.gradle")) || fs.existsSync(path.join(p, "build.gradle.kts"))
+    ) || null,
+  };
 }
 
-// --- Command Runner ---
+// ============================================================
+// COMMAND RUNNER
+// ============================================================
 function runCommand(cmd, cwd, timeoutMs = 120000) {
   try {
     const output = execSync(cmd, {
-      cwd,
-      encoding: "utf-8",
-      timeout: timeoutMs,
-      maxBuffer: 10 * 1024 * 1024, // 10MB
-      env: { ...process.env },
+      cwd, encoding: "utf-8", timeout: timeoutMs,
+      maxBuffer: 10 * 1024 * 1024, env: { ...process.env },
     });
-    return { success: true, output: output.trim() };
+    return { success: true, output: output.trim(), exitCode: 0 };
   } catch (err) {
-    const output = (err.stdout || "") + "\n" + (err.stderr || "");
-    return { success: false, output: output.trim(), exitCode: err.status };
+    return {
+      success: false,
+      output: ((err.stdout || "") + "\n" + (err.stderr || "")).trim(),
+      exitCode: err.status || 1,
+    };
   }
 }
 
-// --- Dangerous commands blocklist (NEVER allow these) ---
-const BLOCKED_PATTERNS = [
-  /\brm\s+-rf\s+[\/~]/, // rm -rf / or ~
-  /\brm\s+-rf\s+\*/, // rm -rf *
-  /\bmkfs\b/, // format disk
-  /\bdd\s+if=/, // disk destroy
-  /\bcurl\b.*\|\s*sh/, // pipe curl to shell
-  /\bwget\b.*\|\s*sh/, // pipe wget to shell
-  /\bsudo\b/, // sudo commands
-  /\bchmod\s+777\s+\//, // chmod 777 on root
-  /\bkill\s+-9\s+1\b/, // kill init
-  /\breboot\b/, // reboot
-  /\bshutdown\b/, // shutdown
-  /\bnpm\s+publish\b/, // accidental publish
-  /\bgit\s+push\s+.*--force\s+.*main/, // force push to main
-  /\bdrop\s+database\b/i, // SQL drop
-  /\bpasswd\b/, // change password
+// Safety blocklist
+const BLOCKED = [
+  /\brm\s+-rf\s+[\/~]/, /\brm\s+-rf\s+\*/, /\bmkfs\b/, /\bdd\s+if=/,
+  /\bcurl\b.*\|\s*sh/, /\bwget\b.*\|\s*sh/, /\bsudo\b/,
+  /\bchmod\s+777\s+\//, /\bkill\s+-9\s+1\b/, /\breboot\b/, /\bshutdown\b/,
+  /\bnpm\s+publish\b/, /\bgit\s+push\s+.*--force\s+.*main/, /\bdrop\s+database\b/i,
+];
+function isBlocked(cmd) { return BLOCKED.some(p => p.test(cmd)); }
+
+// ============================================================
+// TOOL DEFINITIONS
+// ============================================================
+const TOOLS = [
+  {
+    name: "detect_sdks",
+    description: "Auto-detect Flutter SDK, Android SDK, and project paths. Run first during setup.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "save_config",
+    description: "Save SDK/project paths to config file.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        flutter_sdk: { type: "string" }, android_sdk: { type: "string" },
+        flutter_project: { type: "string" }, android_project: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "flutter_analyze",
+    description: "Run flutter analyze. Returns compile errors/warnings. Use after code generation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        paths: { type: "array", items: { type: "string" }, description: "Paths relative to flutter project root. Empty = entire project." },
+      },
+    },
+  },
+  {
+    name: "dart_format",
+    description: "Run dart format on files.",
+    inputSchema: {
+      type: "object",
+      properties: { paths: { type: "array", items: { type: "string" } } },
+      required: ["paths"],
+    },
+  },
+  {
+    name: "flutter_pub_get",
+    description: "Run flutter pub get to resolve dependencies.",
+    inputSchema: {
+      type: "object",
+      properties: { app_path: { type: "string", description: "Relative app path e.g. apps/gps_route" } },
+    },
+  },
+  {
+    name: "gradle_build",
+    description: "Run Gradle build on Android project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: { type: "string", enum: ["compileDebugKotlin", "assembleDebug", "lint", "clean"] },
+      },
+    },
+  },
+  {
+    name: "run_terminal",
+    description: "Run ANY terminal command on dev machine. Dangerous commands blocked. User sees permission prompt.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "Terminal command to run" },
+        cwd: { type: "string", description: "'flutter', 'android', or absolute path. Default: flutter project." },
+        timeout_seconds: { type: "number", description: "Timeout (default 120, max 600)" },
+      },
+      required: ["command"],
+    },
+  },
 ];
 
-function isCommandBlocked(cmd) {
-  return BLOCKED_PATTERNS.some((pattern) => pattern.test(cmd));
-}
-
-// --- MCP Server ---
-const server = new Server(
-  { name: "foapp-build-server", version: "1.0.0" },
-  { capabilities: { tools: {} } }
-);
-
-// List available tools
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    {
-      name: "detect_sdks",
-      description:
-        "Auto-detect Flutter SDK, Android SDK, and project paths on this machine. Run this first during setup.",
-      inputSchema: { type: "object", properties: {}, required: [] },
-    },
-    {
-      name: "save_config",
-      description:
-        "Save SDK paths and project paths to config. Run after detect_sdks if paths need to be overridden.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          flutter_sdk: { type: "string", description: "Path to Flutter SDK root" },
-          android_sdk: { type: "string", description: "Path to Android SDK root" },
-          flutter_project: { type: "string", description: "Path to OperatorAppFlutter root" },
-          android_project: { type: "string", description: "Path to OperatorApp root" },
-        },
-      },
-    },
-    {
-      name: "flutter_analyze",
-      description:
-        "Run 'flutter analyze' on the Flutter project or specific files. Returns all compile errors and warnings. Use after code generation to verify zero errors.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          paths: {
-            type: "array",
-            items: { type: "string" },
-            description: "Specific file or directory paths to analyze (relative to flutter project root). If empty, analyzes entire project.",
-          },
-        },
-      },
-    },
-    {
-      name: "dart_format",
-      description: "Run 'dart format' on specified files to fix formatting.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          paths: {
-            type: "array",
-            items: { type: "string" },
-            description: "File paths to format (relative to flutter project root)",
-          },
-        },
-        required: ["paths"],
-      },
-    },
-    {
-      name: "flutter_pub_get",
-      description: "Run 'flutter pub get' to resolve dependencies. Use after adding new packages.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          app_path: {
-            type: "string",
-            description: "Path to specific app (e.g., 'apps/gps_route'). If empty, runs in project root.",
-          },
-        },
-      },
-    },
-    {
-      name: "gradle_build",
-      description:
-        "Run Gradle build command on the Android project. Use to verify Kotlin/Android code compiles.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          task: {
-            type: "string",
-            description: "Gradle task to run. Default: compileDebugKotlin",
-            enum: ["compileDebugKotlin", "assembleDebug", "lint"],
-          },
-        },
-      },
-    },
-    {
-      name: "run_terminal",
-      description:
-        "Run ANY terminal command on the developer's local machine. Dangerous commands (rm -rf /, sudo, reboot, etc.) are blocked for safety. User will see a permission prompt before execution. Use this for: git commands, file operations, custom scripts, package installs, or any command the AI needs to run.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          command: { type: "string", description: "The terminal command to run" },
-          cwd: {
-            type: "string",
-            description: "Working directory. Use 'flutter' for OperatorAppFlutter, 'android' for OperatorApp, or an absolute path. Defaults to flutter project.",
-          },
-          timeout_seconds: {
-            type: "number",
-            description: "Timeout in seconds. Default: 120. Max: 600.",
-          },
-        },
-        required: ["command"],
-      },
-    },
-  ],
-}));
-
-// Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+// ============================================================
+// TOOL HANDLERS
+// ============================================================
+function handleTool(name, args) {
   const config = loadConfig();
 
-  switch (name) {
-    case "detect_sdks": {
-      const flutterSDK = detectFlutterSDK();
-      const androidSDK = detectAndroidSDK();
-      const { flutterProject, androidProject } = detectProjectPaths();
-
-      const result = {
-        flutter_sdk: flutterSDK || "NOT FOUND",
-        android_sdk: androidSDK || "NOT FOUND",
-        flutter_project: flutterProject || "NOT FOUND",
-        android_project: androidProject || "NOT FOUND",
-        flutter_version: null,
-        java_version: null,
-      };
-
-      if (flutterSDK) {
-        try {
-          result.flutter_version = execSync(
-            `${path.join(flutterSDK, "bin", "flutter")} --version --machine`,
-            { encoding: "utf-8", timeout: 15000 }
-          ).trim();
-        } catch {}
-      }
-
-      try {
-        result.java_version = execSync("java -version 2>&1", {
-          encoding: "utf-8",
-          timeout: 5000,
-        }).trim();
-      } catch {}
-
-      // Auto-save if all found
-      if (flutterSDK && flutterProject) {
-        saveConfig({
-          flutter_sdk: flutterSDK,
-          android_sdk: androidSDK,
-          flutter_project: flutterProject,
-          android_project: androidProject,
-        });
-        result.config_saved = true;
-      }
-
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      };
+  if (name === "detect_sdks") {
+    const flutterSDK = detectFlutterSDK();
+    const androidSDK = detectAndroidSDK();
+    const { flutterProject, androidProject } = detectProjectPaths();
+    const result = {
+      flutter_sdk: flutterSDK || "NOT FOUND",
+      android_sdk: androidSDK || "NOT FOUND",
+      flutter_project: flutterProject || "NOT FOUND",
+      android_project: androidProject || "NOT FOUND",
+    };
+    try { result.flutter_version = execSync(`${flutterSDK ? path.join(flutterSDK, "bin", "flutter") : "flutter"} --version`, { encoding: "utf-8", timeout: 15000 }).split("\n")[0]; } catch {}
+    try { result.java_version = execSync("java -version 2>&1", { encoding: "utf-8", timeout: 5000 }).split("\n")[0]; } catch {}
+    if (flutterSDK && flutterProject) {
+      saveConfig({ flutter_sdk: flutterSDK, android_sdk: androidSDK, flutter_project: flutterProject, android_project: androidProject });
+      result.config_saved = true;
     }
+    return JSON.stringify(result, null, 2);
+  }
 
-    case "save_config": {
-      const newConfig = { ...config, ...args };
-      saveConfig(newConfig);
-      return {
-        content: [{ type: "text", text: `Config saved to ${CONFIG_FILE}\n${JSON.stringify(newConfig, null, 2)}` }],
-      };
-    }
+  if (name === "save_config") {
+    saveConfig({ ...config, ...args });
+    return `Config saved to ${CONFIG_FILE}\n${JSON.stringify({ ...config, ...args }, null, 2)}`;
+  }
 
-    case "flutter_analyze": {
-      const projectPath = config.flutter_project;
-      if (!projectPath) {
-        return {
-          content: [{ type: "text", text: "ERROR: Flutter project path not configured. Run detect_sdks first." }],
-          isError: true,
-        };
-      }
+  if (name === "flutter_analyze") {
+    if (!config.flutter_project) return "ERROR: Flutter project not configured. Run detect_sdks first.";
+    const bin = config.flutter_sdk ? path.join(config.flutter_sdk, "bin", "flutter") : "flutter";
+    const targets = args.paths && args.paths.length ? args.paths.join(" ") : ".";
+    const r = runCommand(`${bin} analyze ${targets} --no-pub`, config.flutter_project, 180000);
+    return `## Flutter Analyze\nExit: ${r.exitCode} | Success: ${r.success}\n\n\`\`\`\n${r.output}\n\`\`\``;
+  }
 
-      const flutterBin = config.flutter_sdk
-        ? path.join(config.flutter_sdk, "bin", "flutter")
-        : "flutter";
+  if (name === "dart_format") {
+    if (!config.flutter_project) return "ERROR: Flutter project not configured.";
+    const bin = config.flutter_sdk ? path.join(config.flutter_sdk, "bin", "dart") : "dart";
+    const r = runCommand(`${bin} format ${args.paths.join(" ")}`, config.flutter_project);
+    return `## Dart Format\n\`\`\`\n${r.output}\n\`\`\``;
+  }
 
-      const targetPaths = args.paths && args.paths.length > 0
-        ? args.paths.join(" ")
-        : ".";
+  if (name === "flutter_pub_get") {
+    if (!config.flutter_project) return "ERROR: Flutter project not configured.";
+    const bin = config.flutter_sdk ? path.join(config.flutter_sdk, "bin", "flutter") : "flutter";
+    const cwd = args.app_path ? path.join(config.flutter_project, args.app_path) : config.flutter_project;
+    const r = runCommand(`${bin} pub get`, cwd, 120000);
+    return `## Pub Get\n\`\`\`\n${r.output}\n\`\`\``;
+  }
 
-      const result = runCommand(
-        `${flutterBin} analyze ${targetPaths} --no-pub`,
-        projectPath,
-        180000 // 3 min timeout
-      );
+  if (name === "gradle_build") {
+    if (!config.android_project) return "ERROR: Android project not configured.";
+    const task = args.task || "compileDebugKotlin";
+    const gw = process.platform === "win32" ? "gradlew.bat" : "./gradlew";
+    const r = runCommand(`${gw} ${task}`, config.android_project, 300000);
+    return `## Gradle: ${task}\nExit: ${r.exitCode} | Success: ${r.success}\n\n\`\`\`\n${r.output}\n\`\`\``;
+  }
 
-      return {
-        content: [{
-          type: "text",
-          text: `## Flutter Analyze Result\n\nExit code: ${result.exitCode || 0}\nSuccess: ${result.success}\n\n\`\`\`\n${result.output}\n\`\`\``,
-        }],
-      };
-    }
+  if (name === "run_terminal") {
+    if (isBlocked(args.command)) return `BLOCKED: Dangerous command not allowed.\nCommand: ${args.command}`;
+    let cwd;
+    if (!args.cwd || args.cwd === "flutter") cwd = config.flutter_project;
+    else if (args.cwd === "android") cwd = config.android_project;
+    else cwd = args.cwd;
+    if (!cwd || !fs.existsSync(cwd)) return `ERROR: Directory not found: ${cwd || "not configured"}. Run detect_sdks first.`;
+    const timeout = Math.min((args.timeout_seconds || 120) * 1000, 600000);
+    const r = runCommand(args.command, cwd, timeout);
+    return `## Terminal: ${args.command}\nDir: ${cwd}\nExit: ${r.exitCode} | Success: ${r.success}\n\n\`\`\`\n${r.output}\n\`\`\``;
+  }
 
-    case "dart_format": {
-      const projectPath = config.flutter_project;
-      if (!projectPath) {
-        return {
-          content: [{ type: "text", text: "ERROR: Flutter project path not configured." }],
-          isError: true,
-        };
-      }
+  return `Unknown tool: ${name}`;
+}
 
-      const dartBin = config.flutter_sdk
-        ? path.join(config.flutter_sdk, "bin", "dart")
-        : "dart";
+// ============================================================
+// MCP PROTOCOL — Pure JSON-RPC over stdio (zero dependencies)
+// ============================================================
+let buffer = "";
 
-      const filePaths = args.paths.join(" ");
-      const result = runCommand(`${dartBin} format ${filePaths}`, projectPath);
+const rl = readline.createInterface({ input: process.stdin, terminal: false });
 
-      return {
-        content: [{ type: "text", text: `## Dart Format Result\n\n\`\`\`\n${result.output}\n\`\`\`` }],
-      };
-    }
-
-    case "flutter_pub_get": {
-      const projectPath = config.flutter_project;
-      if (!projectPath) {
-        return {
-          content: [{ type: "text", text: "ERROR: Flutter project path not configured." }],
-          isError: true,
-        };
-      }
-
-      const flutterBin = config.flutter_sdk
-        ? path.join(config.flutter_sdk, "bin", "flutter")
-        : "flutter";
-
-      const cwd = args.app_path
-        ? path.join(projectPath, args.app_path)
-        : projectPath;
-
-      const result = runCommand(`${flutterBin} pub get`, cwd, 120000);
-
-      return {
-        content: [{ type: "text", text: `## Pub Get Result\n\n\`\`\`\n${result.output}\n\`\`\`` }],
-      };
-    }
-
-    case "gradle_build": {
-      const projectPath = config.android_project;
-      if (!projectPath) {
-        return {
-          content: [{ type: "text", text: "ERROR: Android project path not configured." }],
-          isError: true,
-        };
-      }
-
-      const task = args.task || "compileDebugKotlin";
-      const gradlew = process.platform === "win32" ? "gradlew.bat" : "./gradlew";
-      const result = runCommand(`${gradlew} ${task}`, projectPath, 300000); // 5 min
-
-      return {
-        content: [{
-          type: "text",
-          text: `## Gradle Build Result\n\nTask: ${task}\nExit code: ${result.exitCode || 0}\nSuccess: ${result.success}\n\n\`\`\`\n${result.output}\n\`\`\``,
-        }],
-      };
-    }
-
-    case "run_terminal": {
-      const cmd = args.command;
-
-      // Safety: block dangerous commands
-      if (isCommandBlocked(cmd)) {
-        return {
-          content: [{
-            type: "text",
-            text: `BLOCKED: This command is not allowed for safety reasons.\nCommand: ${cmd}\n\nBlocked patterns include: rm -rf /, sudo, reboot, shutdown, force push to main, drop database, etc.`,
-          }],
-          isError: true,
-        };
-      }
-
-      // Resolve working directory
-      let cwd;
-      if (!args.cwd || args.cwd === "flutter") {
-        cwd = config.flutter_project;
-      } else if (args.cwd === "android") {
-        cwd = config.android_project;
-      } else {
-        cwd = args.cwd; // absolute path
-      }
-
-      if (!cwd) {
-        return {
-          content: [{ type: "text", text: "ERROR: Working directory not configured. Run detect_sdks first." }],
-          isError: true,
-        };
-      }
-
-      // Validate cwd exists
-      if (!fs.existsSync(cwd)) {
-        return {
-          content: [{ type: "text", text: `ERROR: Directory does not exist: ${cwd}` }],
-          isError: true,
-        };
-      }
-
-      const timeoutMs = Math.min((args.timeout_seconds || 120) * 1000, 600000); // max 10 min
-      const result = runCommand(cmd, cwd, timeoutMs);
-
-      return {
-        content: [{
-          type: "text",
-          text: `## Terminal: ${cmd}\n\nDirectory: ${cwd}\nExit code: ${result.exitCode || 0}\nSuccess: ${result.success}\n\n\`\`\`\n${result.output}\n\`\`\``,
-        }],
-      };
-    }
-
-    default:
-      return {
-        content: [{ type: "text", text: `Unknown tool: ${name}` }],
-        isError: true,
-      };
+rl.on("line", (line) => {
+  buffer += line;
+  try {
+    const msg = JSON.parse(buffer);
+    buffer = "";
+    handleMessage(msg);
+  } catch {
+    // Incomplete JSON — wait for more lines
   }
 });
 
-// Start server
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+function send(response) {
+  const json = JSON.stringify(response);
+  process.stdout.write(json + "\n");
 }
 
-main().catch(console.error);
+function handleMessage(msg) {
+  const { id, method, params } = msg;
+
+  // Initialize
+  if (method === "initialize") {
+    send({
+      jsonrpc: "2.0", id,
+      result: {
+        protocolVersion: "2024-11-05",
+        capabilities: { tools: {} },
+        serverInfo: { name: "foapp-build-server", version: "1.0.0" },
+      },
+    });
+    return;
+  }
+
+  // Initialized notification
+  if (method === "notifications/initialized") return;
+
+  // List tools
+  if (method === "tools/list") {
+    send({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
+    return;
+  }
+
+  // Call tool
+  if (method === "tools/call") {
+    const toolName = params.name;
+    const toolArgs = params.arguments || {};
+    try {
+      const result = handleTool(toolName, toolArgs);
+      const isError = result.startsWith("ERROR:") || result.startsWith("BLOCKED:");
+      send({
+        jsonrpc: "2.0", id,
+        result: {
+          content: [{ type: "text", text: result }],
+          isError,
+        },
+      });
+    } catch (err) {
+      send({
+        jsonrpc: "2.0", id,
+        result: {
+          content: [{ type: "text", text: `Error executing ${toolName}: ${err.message}\n${err.stack}` }],
+          isError: true,
+        },
+      });
+    }
+    return;
+  }
+
+  // Ping
+  if (method === "ping") {
+    send({ jsonrpc: "2.0", id, result: {} });
+    return;
+  }
+
+  // Unknown method
+  if (id) {
+    send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
+  }
+}
+
+// Keep process alive
+process.stdin.resume();
+process.stderr.write("foapp-build-server started (zero-dependency MCP)\n");
