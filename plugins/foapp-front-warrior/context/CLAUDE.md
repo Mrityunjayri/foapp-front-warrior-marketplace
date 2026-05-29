@@ -111,34 +111,72 @@ WETheme.textStyleMedium14.copyWith(
 
 ## 4. Spacing
 
-### Always use spacing constants from `package:we_style/we_style.dart`:
+### Always use spacing constants from `package:we_style/we_style.dart` (119 constants available):
 
 ```dart
-// Vertical spacing (SizedBox height)
-verticalSpace2 / verticalSpace4 / verticalSpace8 / verticalSpace12
-verticalSpace16 / verticalSpace20 / verticalSpace24 / verticalSpace32
-verticalSpace48 / verticalSpace80 / verticalSpace120
+// Vertical spacing (SizedBox height) — 23 values
+verticalSpace2 / verticalSpace4 / verticalSpace6 / verticalSpace8
+verticalSpace12 / verticalSpace16 / verticalSpace17 / verticalSpace20
+verticalSpace22 / verticalSpace24 / verticalSpace25 / verticalSpace28
+verticalSpace30 / verticalSpace32 / verticalSpace38 / verticalSpace40
+verticalSpace44 / verticalSpace48 / verticalSpace54 / verticalSpace56
+verticalSpace64 / verticalSpace80 / verticalSpace120
 
-// Horizontal spacing (SizedBox width)
-horizontalSpace2 / horizontalSpace8 / horizontalSpace16
-horizontalSpace20 / horizontalSpace80
+// Horizontal spacing (SizedBox width) — 12 values
+horizontalSpace2 / horizontalSpace4 / horizontalSpace6 / horizontalSpace8
+horizontalSpace10 / horizontalSpace12 / horizontalSpace16 / horizontalSpace20
+horizontalSpace24 / horizontalSpace32 / horizontalSpace48 / horizontalSpace80
 
-// EdgeInsets padding constants
-horizontalPadding16   // EdgeInsets.symmetric(horizontal: 16)
-verticalPadding12     // EdgeInsets.symmetric(vertical: 12)
-padding16             // EdgeInsets.all(16)
-bottomPadding12       // EdgeInsets.only(bottom: 12)
-topPadding16          // EdgeInsets.only(top: 16)
-rightPadding16        // EdgeInsets.only(right: 16)
+// Horizontal padding (EdgeInsets.symmetric horizontal) — 13 values
+horizontalPadding2 / horizontalPadding4 / horizontalPadding6 / horizontalPadding8
+horizontalPadding12 / horizontalPadding16 / horizontalPadding20 / horizontalPadding22
+horizontalPadding24 / horizontalPadding32 / horizontalPadding40 / horizontalPadding48
+horizontalPadding70
 
-// Empty widget
+// Vertical padding (EdgeInsets.symmetric vertical) — 15 values
+verticalPadding2 / verticalPadding3 / verticalPadding4 / verticalPadding6
+verticalPadding8 / verticalPadding9 / verticalPadding10 / verticalPadding12
+verticalPadding14 / verticalPadding16 / verticalPadding20 / verticalPadding24
+verticalPadding32 / verticalPadding40 / verticalPadding48
+
+// Top padding (EdgeInsets.only top) — 11 values
+topPadding0 / topPadding4 / topPadding6 / topPadding8 / topPadding10
+topPadding12 / topPadding16 / topPadding24 / topPadding28 / topPadding32
+topPadding40
+
+// Bottom padding (EdgeInsets.only bottom) — 8 values
+bottomPadding4 / bottomPadding8 / bottomPadding12 / bottomPadding16
+bottomPadding24 / bottomPadding36 / bottomPadding80 / downPadding8
+
+// Left padding (EdgeInsets.only left) — 6 values
+leftPadding10 / leftPadding12 / leftPadding16 / leftPadding32
+leftPadding48 / leftPadding56
+
+// Right padding (EdgeInsets.only right) — 7 values
+rightPadding8 / rightPadding12 / rightPadding16 / rightPadding18
+rightPadding20 / rightPadding46 / rightPadding48
+
+// Uniform padding (EdgeInsets.all) — 8 values
+padding0 / padding2 / padding4 / padding8 / padding12
+padding16 / padding20 / padding24
+
+// Empty widgets
 emptyWidget           // SizedBox.shrink()
+emptySliverWidget     // SliverToBoxAdapter(child: SizedBox.shrink())
+allPadding0           // EdgeInsets.zero
 ```
 
 ### NEVER:
 - Write `SizedBox(height: 16)` inline — use `verticalSpace16`
 - Write `SizedBox(width: 8)` inline — use `horizontalSpace8`
 - Write `EdgeInsets.symmetric(horizontal: 16)` inline — use `horizontalPadding16`
+- Write `EdgeInsets.only(top: 12)` inline — use `topPadding12`
+- Write `EdgeInsets.only(bottom: 16)` inline — use `bottomPadding16`
+- Write `EdgeInsets.only(left: 16)` inline — use `leftPadding16`
+- Write `EdgeInsets.only(right: 16)` inline — use `rightPadding16`
+- Write `EdgeInsets.all(16)` inline — use `padding16`
+- Write `EdgeInsets.zero` inline — use `allPadding0`
+- If the exact value does NOT exist in the list above → **STOP and ask the user**
 
 ---
 
@@ -304,7 +342,9 @@ Before creating any new UI component, check if it exists in:
 | Card | `WeCard` / `WeCardV2` / `WeCardWidget` |
 | Loading spinner | `WeLoaderWidget` / `WeOpLoader` |
 | Confirmation popup | `WeConfirmationDialog` |
-| Bottom sheet | `WeOpBottomSheetHelperWidgetV2` + `showCustomBottomSheet()` |
+| Bottom sheet wrapper | `WEBottomSheet` (required outer wrapper for all bottom sheets) |
+| Bottom sheet display | `showCustomBottomSheet()` (to show) + `WEBottomSheet` (to wrap content) |
+| Bottom sheet standard | `WeOpBottomSheetHelperWidgetV2` (header + buttons, internally uses `WEBottomSheet`) |
 | Success screen | `WESuccessScreen` / `WeSuccessScreenV2` |
 | Scaffold | `WEScaffold` |
 | Divider | `WEDividerWidget` |
@@ -321,6 +361,7 @@ Before creating any new UI component, check if it exists in:
 | Toggle | `WeHorizontalToggleButton` |
 | Bottom nav button | `WEBottomNavButtonWidget` |
 | Dashed container | `WeDashedContainerWidget` |
+| Dotted line divider | `DottedLinesWidget(noOfDash: 100, displayColor: WEColors.colorEAEDFA, bgColor: WEColors.colorFFFFFF)` |
 | Banner | `WEBanner` / `BannerAnimationWidget` / `WEBannerCardShader` |
 | Rive animation | `WeRiveWidget` |
 | Toast (success/error) | `WEOpToast().showSuccessToast()` / `.showErrorToast()` |
@@ -357,8 +398,18 @@ Before creating any new UI component, check if it exists in:
 | `SizedBox.shrink()` | ❌ | `emptyWidget` |
 | `SizedBox()` (empty) | ❌ | `emptyWidget` |
 | `Navigator.push/pop` | ❌ | `WeNavigator.push/pop` |
-| `showModalBottomSheet(...)` | ❌ | `showCustomBottomSheet(...)` |
+| `showModalBottomSheet(...)` | ❌ | `showCustomBottomSheet(...)` + `WEBottomSheet` wrapper |
 | `SnackBar(...)` (for success/error) | ❌ | `WEOpToast().showSuccessToast/showErrorToast` |
+| `SizedBox(height: N)` | ❌ | `verticalSpaceN` (e.g., `verticalSpace16`) |
+| `SizedBox(width: N)` | ❌ | `horizontalSpaceN` (e.g., `horizontalSpace8`) |
+| `EdgeInsets.only(top: N)` | ❌ | `topPaddingN` (e.g., `topPadding16`) |
+| `EdgeInsets.only(bottom: N)` | ❌ | `bottomPaddingN` (e.g., `bottomPadding12`) |
+| `EdgeInsets.only(left: N)` | ❌ | `leftPaddingN` (e.g., `leftPadding16`) |
+| `EdgeInsets.only(right: N)` | ❌ | `rightPaddingN` (e.g., `rightPadding16`) |
+| `EdgeInsets.symmetric(horizontal: N)` | ❌ | `horizontalPaddingN` (e.g., `horizontalPadding16`) |
+| `EdgeInsets.symmetric(vertical: N)` | ❌ | `verticalPaddingN` (e.g., `verticalPadding12`) |
+| `EdgeInsets.all(N)` | ❌ | `paddingN` (e.g., `padding16`) |
+| Custom dotted divider | ❌ | `DottedLinesWidget(noOfDash: N, displayColor: ..., bgColor: ...)` |
 
 ### NEVER add `height` (line height) in text style copyWith:
 The project does NOT use line height in text styles. Never write:
@@ -1017,22 +1068,63 @@ static const String myNewIcon = '${_networkGpsBasePath}my_new_icon.png';
 
 ---
 
-## 25. Bottom Sheets — showCustomBottomSheet
+## 25. Bottom Sheets — showCustomBottomSheet + WEBottomSheet
 
-### Always use `showCustomBottomSheet()` — never raw `showModalBottomSheet()`:
+### Two components work TOGETHER — both are required:
 
-The project wraps all bottom sheets using `showCustomBottomSheet()` from `package:we_common_widgets`. For content-heavy bottom sheets, use `WeOpBottomSheetHelperWidgetV2`:
+1. **`showCustomBottomSheet()`** — the function that displays the bottom sheet (NEVER use raw `showModalBottomSheet`)
+2. **`WEBottomSheet`** — the styled container widget returned inside the builder (provides close button, center icon, consistent styling)
+
+### Pattern: showCustomBottomSheet shows it, WEBottomSheet wraps the content:
 
 ```dart
-// Simple bottom sheet with custom content
+// ✅ CORRECT — use BOTH showCustomBottomSheet + WEBottomSheet together
 showCustomBottomSheet(
   context: context,
-  builder: (context) => MyBottomSheetContent(),
-  isDismissible: true,
-  enableDrag: true,
+  isScrollControlled: true,
+  builder: (context) => WEBottomSheet(
+    showCloseButton: true,
+    onTapCloseButton: () => WeNavigator.pop(context),
+    centerIcon: AssetsHelper.pngNetwork(
+      assetName: PNGAssetsPath.myIcon,
+      width: 50,
+      height: 50,
+    ),
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          WeText(RawStrings.title, style: WETheme.textStyleBold16),
+          verticalSpace12,
+          WeText(RawStrings.description, style: WETheme.textStyleMedium14),
+          verticalSpace16,
+          WEFlatButtonV2.primary(
+            title: WeLangKeysStore.instance.confirm.string(context),
+            onTap: () => handleConfirm(),
+          ),
+        ],
+      ),
+    ),
+  ),
 );
+```
 
-// Standard bottom sheet with header, description, and buttons
+### WEBottomSheet parameters:
+```dart
+WEBottomSheet(
+  backgroundColor: WEColors.colorFFFFFF,     // optional, defaults to white
+  showCloseButton: true,                      // show/hide close button
+  onTapCloseButton: () => ...,                // close button callback
+  centerIcon: Widget?,                        // icon centered at top of sheet
+  centerIconPositionFromTop: -30,             // offset for center icon (negative = above sheet)
+  isDismissible: true,                        // tap outside to dismiss
+  child: Widget,                              // required — your content
+)
+```
+
+### For standard header + description + buttons, use `WeOpBottomSheetHelperWidgetV2`:
+```dart
 showCustomBottomSheet(
   context: context,
   builder: (context) => WeOpBottomSheetHelperWidgetV2(
@@ -1045,10 +1137,13 @@ showCustomBottomSheet(
   ),
 );
 ```
+Note: `WeOpBottomSheetHelperWidgetV2` internally wraps its content in `WEBottomSheet`, so you don't need to add `WEBottomSheet` again when using it.
 
 ### NEVER:
 - Use raw `showModalBottomSheet(...)` — always use `showCustomBottomSheet(...)`
-- Build bottom sheet content without using `WeOpBottomSheetHelperWidgetV2` when the design includes header + description + buttons
+- Return content directly from builder without wrapping in `WEBottomSheet` or `WeOpBottomSheetHelperWidgetV2`
+- Create a bottom sheet widget without using `WEBottomSheet` as the outer wrapper
+- Build your own close button / header / icon layout — `WEBottomSheet` provides these
 
 ---
 
@@ -1380,3 +1475,85 @@ Stop and ask the user when:
 13. A text input formatter for a specific pattern does not exist in `we_base`
 14. The route name for a new screen is not yet defined in `ModuleRouteNames`
 15. A date/time formatting utility is needed but doesn't exist in `DateTimeUtils`
+16. A padding/spacing constant value does not exist in `we_style/spaces.dart`
+
+---
+
+## 34. Navigation Architecture — ModulesRoutes + FeatureRoutes + BasePageRoute
+
+### This project uses a three-tier route registration system:
+
+```
+ModulesRoutes (app/module level)
+  └── FeatureRoutes (feature level)
+       └── BasePageRoute<T> (individual screen level)
+```
+
+All base classes come from `package:we_comm_native`, exported via `we_base_bridge.dart`.
+
+### Defining a page route:
+```dart
+class MyFeaturePageRoute extends BasePageRoute<MyPageRouteModel> {
+  const MyFeaturePageRoute();
+
+  @override
+  String get path => ModuleRouteNames.myFeatureScreen;
+
+  @override
+  Widget buildWidget(BuildContext context, MyPageRouteModel data) {
+    return BlocProvider(
+      create: (_) => MyBloc(repository: locator<MyRepository>()),
+      child: const MyScreen(),
+    );
+  }
+}
+```
+
+### Registering routes in a feature:
+```dart
+const myFeaturePage = MyFeaturePageRoute();
+
+class MyFeatureRoutes extends FeatureRoutes {
+  const MyFeatureRoutes();
+
+  @override
+  List<BasePageRoute> get list => [
+    myFeaturePage,
+    // ... other screens
+  ];
+}
+```
+
+### Registering features in a module:
+```dart
+class MyModuleRoutes extends ModulesRoutes {
+  @override
+  Future<void> initializeDependencies() async {
+    super.initializeDependencies();
+    await locator.initializeDependencies();
+  }
+
+  @override
+  List<FeatureRoutes> get list => [
+    const MyFeatureRoutes(),
+    const AnotherFeatureRoutes(),
+  ];
+
+  @override
+  String get serviceName => ModuleServiceName.myModule;
+}
+```
+
+### Navigating to routes:
+```dart
+// Within same module — use the const route instance directly
+WeNavigator.push(context, myFeaturePage, arguments: MyPageRouteModel(id: '123'));
+
+// Between modules — use route from other module's feature routes
+WeNavigator.push(context, otherModulePage, arguments: OtherPageRouteModel(data: value));
+```
+
+### NEVER:
+- Skip the BasePageRoute/FeatureRoutes/ModulesRoutes architecture for new screens
+- Define screens without a corresponding `BasePageRoute` class
+- Put BlocProvider creation in the screen itself — put it in `BasePageRoute.buildWidget()`
