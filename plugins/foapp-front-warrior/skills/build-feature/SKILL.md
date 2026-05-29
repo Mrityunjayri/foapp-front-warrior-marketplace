@@ -295,18 +295,106 @@ Run an internal compliance check (same logic as `/check-code`):
 
 If auto-fixable, fix silently. If needs developer input, flag it.
 
-## Phase 5: Code review loop
+## Phase 5: Self-Verification (MANDATORY — never skip)
 
-After all files are generated, present a summary:
-```
-✅ 12 files generated
-✅ Compliance check: 3 issues found, all auto-fixed
-  ├── Fixed: SizedBox(height: 8) → verticalSpace8 in chat_screen.dart
-  ├── Fixed: Color(0xff0066FF) → WEColors.color0066FF in bubble_widget.dart
-  └── Fixed: Added missing WeLangKeysStore key "ask_munshi_title"
+After ALL files are generated, run a **3-layer verification** before presenting to the developer. Do NOT mark the task as complete until all 3 layers pass.
 
-Review the code or ask for changes.
+### Layer 1: Convention Compliance (AI scan)
+Run the full `/check-code` logic on every generated/modified file:
+- Scan for hardcoded colors → auto-fix with `WEColors`/`AssetsColors` constants
+- Scan for hardcoded text styles → auto-fix with `WETheme`
+- Scan for hardcoded spacing (`SizedBox`, `EdgeInsets`) → auto-fix with spacing constants
+- Scan for hardcoded strings → auto-fix with `WeLangKeysStore`/`RawStrings`
+- Scan for raw Flutter widgets → auto-fix with project widgets (WeText, WEScaffold, WEAppBar, WeCardV2, etc.)
+- Scan for raw `showModalBottomSheet` → auto-fix with `showCustomBottomSheet` + `WEBottomSheet`
+- Scan for raw `Navigator` → auto-fix with `WeNavigator`
+- Scan for `getStateOf`/`DataState` in new files → auto-fix with `handleResponse`/`ResponseState`
+
+**If violations found → fix them silently → re-scan → repeat until 0 violations.**
+
+### Layer 2: Structural Integrity (AI cross-file check)
+Verify the generated code won't cause compile errors:
+
 ```
+For EACH generated file, verify:
+├── All imports resolve to real files/packages that exist in the project
+├── Classes referenced in DI (locator.dart) actually exist
+├── Repository interface methods match implementation methods (name, params, return type)
+├── BLoC event classes match the on<Event> handlers in the BLoC
+├── State classes used in BlocBuilder/BlocConsumer match what BLoC actually emits
+├── Model fromJson/toJson field names match API response keys (check api-catalog.md)
+├── Route registered in FeatureRoutes matches the BasePageRoute path
+├── Constructor parameters in BlocProvider.create match the BLoC constructor
+├── Generic types match: ResponseState<BaseAPIResponse<MyModel>> consistent across layers
+└── No circular imports between files
+```
+
+**For each issue found:**
+1. Fix it automatically if the correct answer is clear
+2. If ambiguous → flag it for the developer (don't guess)
+
+### Layer 3: Build Command Verification (if Flutter SDK available)
+Check if Flutter SDK is accessible by running:
+```bash
+flutter --version 2>/dev/null
+```
+
+**If Flutter SDK IS available (Claude Code CLI):**
+```bash
+# Run Dart analysis on changed files
+cd <flutter_project_path>
+flutter analyze <path/to/changed/files>
+
+# If errors found → read errors → fix code → re-run analyze
+# Loop until: "No issues found!"
+```
+
+```bash
+# For Android changes, run Gradle check
+cd <android_project_path>
+./gradlew compileDebugKotlin 2>&1 | head -50
+
+# If errors found → read errors → fix code → re-run
+```
+
+**If Flutter SDK is NOT available (Cowork Desktop):**
+Skip this layer — Layer 1 and Layer 2 already catch most issues.
+After presenting code, tell the developer:
+```
+⚠ Build verification skipped (Flutter SDK not available in sandbox).
+Run these commands locally to verify:
+  cd ~/OperatorAppFlutter && flutter analyze apps/<feature>/lib/
+  cd ~/OperatorApp && ./gradlew compileDebugKotlin
+```
+
+### Verification report (show to developer AFTER all layers pass):
+```
+## Verification Report
+
+### Layer 1: Convention Compliance ✅
+- Files checked: 12
+- Auto-fixed: 5 violations
+  ├── SizedBox(height: 8) → verticalSpace8 in chat_screen.dart
+  ├── Color(0xff0066FF) → WEColors.color0066FF in bubble_widget.dart
+  ├── EdgeInsets.only(top: 16) → topPadding16 in header_widget.dart
+  ├── Text('hello') → WeText(RawStrings.hello) in input_widget.dart
+  └── AppBar(title:) → WEAppBar(title:) in screen.dart
+- Remaining violations: 0
+
+### Layer 2: Structural Integrity ✅
+- Import resolution: all imports valid
+- DI registration: 4 new classes registered in locator.dart
+- BLoC events ↔ handlers: matched
+- Repository interface ↔ impl: matched
+- Route registration: verified
+
+### Layer 3: Build Verification ⚠️ (skipped — SDK not in sandbox)
+Run locally: flutter analyze apps/ask_munshi/lib/
+
+✅ Code is ready for review.
+```
+
+## Phase 6: Code review loop
 
 The developer may ask for code changes:
 - "BLoC mein loading state ke baad error state bhi handle karo"
@@ -314,6 +402,8 @@ The developer may ask for code changes:
 - "This widget mein padding change karo"
 
 Update ONLY the affected files — do not regenerate everything. Show what changed.
+
+**After EVERY change → re-run Phase 5 verification again. Never skip.**
 
 **Loop continues until the developer is satisfied.**
 

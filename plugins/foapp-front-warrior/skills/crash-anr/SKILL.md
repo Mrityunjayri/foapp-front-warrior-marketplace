@@ -498,16 +498,33 @@ void dispose() {
 }
 ```
 
-### Step 8 — Run compliance check
+### Step 8 — Self-verification (MANDATORY — never skip)
 
-After applying the fix, scan every changed file for:
-- Hardcoded colors → replace with constants
-- Hardcoded styles → replace with WETheme
-- Hardcoded strings → replace with WeLangKeysStore / RawStrings
-- Raw Flutter widgets → replace with project widgets
+After applying the fix, run **3-layer verification**. Do NOT present the fix as complete until all layers pass.
+
+**Layer 1: Convention compliance** — Run `/check-code` logic on every changed file:
+- Hardcoded colors → auto-fix with `WEColors`/`AssetsColors`
+- Hardcoded styles → auto-fix with `WETheme`
+- Hardcoded spacing (`SizedBox`, `EdgeInsets`) → auto-fix with spacing constants
+- Hardcoded strings → auto-fix with `WeLangKeysStore`/`RawStrings`
+- Raw Flutter widgets → auto-fix with project widgets
 - Missing null checks introduced by the fix
+- If violations found → fix → re-scan → repeat until 0 violations
 
-If auto-fixable, fix silently. If needs developer input, flag it.
+**Layer 2: Structural integrity** — Cross-file check:
+- All imports resolve to real files
+- If model changed: fromJson keys match API, type changes propagated to BLoC/UI
+- If BLoC changed: event/state classes consistent with handlers and BlocBuilder
+- If bridge changed: JSON keys and types match on BOTH Android and Flutter sides
+- Constructor params match across DI, BLoC creation, and usage
+
+**Layer 3: Build verification** (if Flutter SDK available):
+```bash
+flutter analyze <changed_files> 2>/dev/null
+```
+If not available → tell developer which commands to run locally.
+
+**Loop: If any issue found → fix automatically → re-verify. Only proceed when clean.**
 
 ---
 

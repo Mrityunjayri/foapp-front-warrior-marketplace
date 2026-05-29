@@ -120,12 +120,30 @@ If fixing the bug correctly requires violating a convention (e.g., the conventio
 
 ### Step 6 — Verify
 
-After applying the fix, check that nothing adjacent is broken:
+After applying the fix, run **mandatory self-verification** (NEVER skip):
 
-- Re-read the files you changed — does the fix look correct in full context?
-- Run the check-code logic on every changed file — scan for accidental regressions (hardcoded values, wrong imports, missing null checks introduced by the fix)
-- Check if the same bug pattern exists elsewhere in the same feature — if it does, list those locations but do NOT fix them unless the developer explicitly asks
-- For bridge bugs: verify that the data serialization matches on BOTH the Android and Flutter sides after the fix
+**A) Convention compliance** — Run `/check-code` logic on every changed file:
+- Scan for hardcoded colors, styles, spacing, strings, raw widgets introduced by the fix
+- If violations found → auto-fix → re-scan → repeat until 0 violations
+
+**B) Structural integrity** — Cross-file verification:
+- All imports resolve to real files that exist
+- If DI was touched: locator registrations match actual classes
+- If BLoC was touched: event handlers match event classes, states match BlocBuilder usage
+- If model was touched: fromJson keys match API response, type changes propagated to all usages
+- If bridge was touched: JSON keys and types match on BOTH Android and Flutter sides
+
+**C) Build verification** (if Flutter SDK available):
+```bash
+flutter analyze <changed_files> 2>/dev/null
+```
+If SDK not available, tell the developer which commands to run locally.
+
+**D) Regression check:**
+- Re-read every changed file in full context — does the fix look correct?
+- Check if the same bug pattern exists elsewhere — list but do NOT fix unless developer asks
+
+**Do NOT mark the task complete until A + B pass. If any issue found → fix → re-verify.**
 
 ---
 
