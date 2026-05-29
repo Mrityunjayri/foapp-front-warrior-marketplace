@@ -611,3 +611,36 @@ Checklist confirming all 13 rules satisfied.
 **Android user_screen pattern**:
 `OperatorApp/.../utils/AppUtility.kt` — `getLastVisitedScreen()`
 `OperatorApp/.../gpsReporting/analytics/ReportEventScreen.kt` — `userScreen` DSL helper
+
+---
+
+## Mandatory Build Verification (NEVER skip)
+
+After generating ALL event files (EventManager, EventName, ScreenName, constants, and placing events in screens/BLoC), run build verification:
+
+### Step 1: Convention check
+Scan every generated/modified file for:
+- Hardcoded strings → must use RawStrings or WeLangKeysStore
+- Wrong import paths → verify all imports resolve to real files
+- EventManager not using static singleton pattern → fix
+- `EventDTO` used instead of `super.sendEvent(named params)` → fix
+- `vehicleId` (lowercase d) instead of `vehicleID` (capital D) → fix
+
+Auto-fix all violations. Re-scan until 0 violations.
+
+### Step 2: Structural check
+- Verify EventManager class compiles: constructor, super call, all methods reference valid constants
+- Verify EventName/ScreenName/EventCategory constants are used correctly in EventManager methods
+- Verify event calls in screens: `MyEventManager.instance.methodName()` — not `locator<>()`
+- Verify screen_view is in `initState()` — not in `build()` or `BlocListener`
+
+### Step 3: Build via MCP (if available)
+```
+1. Call foapp-build.flutter_analyze(paths: ["apps/<feature>/lib/analytics/", "apps/<feature>/lib/presentation/"])
+2. If errors → read → fix → re-analyze → loop until 0 errors
+3. Call foapp-build.dart_format(paths: [all generated/modified files])
+```
+
+If MCP not available, tell developer which commands to run.
+
+**NEVER mark task complete with compile errors. Always verify first.**

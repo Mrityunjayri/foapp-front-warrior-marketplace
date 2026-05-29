@@ -313,3 +313,22 @@ If the user says "fix it" or "auto-fix", apply all ERROR and WARNING fixes autom
 
 Do NOT auto-fix INFO level — those need developer judgment.
 Do NOT auto-fix bridge mismatches without developer confirmation — the developer must decide which side is canonical.
+
+## Build Verification After Auto-Fix (NEVER skip)
+
+After auto-fixing violations, verify the fixes don't introduce compile errors:
+
+### Step 1: Re-run convention check
+Run all 39 rules again on fixed files. Must return 0 ERRORS. If new violations → fix → re-run → loop.
+
+### Step 2: Build via MCP (if available)
+```
+1. Call foapp-build.flutter_analyze(paths: [all auto-fixed files])
+2. If compile errors from auto-fix → read errors → fix → re-analyze → loop until 0 errors
+3. If Android/Kotlin files were fixed: Call foapp-build.gradle_build(task: "compileDebugKotlin")
+4. If Kotlin errors → fix → re-build → loop until success
+```
+
+If MCP not available, tell developer which commands to run.
+
+**Auto-fix must NEVER introduce new compile errors. Always verify after fixing.**

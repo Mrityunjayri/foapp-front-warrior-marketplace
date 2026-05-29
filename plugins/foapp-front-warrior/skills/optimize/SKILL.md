@@ -95,3 +95,36 @@ metadata:
 3. **widget.dart:67** — Same card widget duplicated in 3 places
    → Extract to shared `MyFeatureCard` widget
 ```
+
+---
+
+## Mandatory Build Verification (NEVER skip)
+
+After applying ANY optimization changes, run build verification:
+
+### Step 1: Convention check
+Scan every modified file for convention violations introduced by the optimization:
+- Hardcoded colors/styles/spacing/strings → auto-fix with constants
+- Raw Flutter widgets introduced → replace with project widgets
+- Imports broken by refactoring → fix
+
+Auto-fix all. Re-scan until 0 violations.
+
+### Step 2: Structural check
+- All imports still resolve after refactoring
+- BLoC event/state classes still match handlers after optimization
+- DI registrations still valid if classes were renamed/moved
+- No broken references from other files that depend on optimized code
+
+### Step 3: Build via MCP (if available)
+```
+1. Call foapp-build.flutter_analyze(paths: [all modified files/directories])
+2. If errors → read → fix → re-analyze → loop until 0 errors
+3. If Android files changed: Call foapp-build.gradle_build(task: "compileDebugKotlin")
+4. If Kotlin errors → fix → re-build → loop until success
+5. Call foapp-build.dart_format(paths: [all modified files])
+```
+
+If MCP not available, tell developer which commands to run.
+
+**NEVER mark optimization complete with compile errors. Always verify first.**

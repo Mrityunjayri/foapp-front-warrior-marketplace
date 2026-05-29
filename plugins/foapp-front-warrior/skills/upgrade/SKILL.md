@@ -418,3 +418,34 @@ For every upgrade, show a structured report:
   - [Feature name] — reason why it needs testing
   - [Feature name] — reason why it needs testing
 ```
+
+---
+
+## Mandatory Build Verification (NEVER skip)
+
+After applying ANY upgrade changes (SDK version bump, package update, migration fixes), run build verification:
+
+### Step 1: Convention check
+Scan every modified file for convention violations introduced by the upgrade:
+- New API patterns introduced by package update → must still follow CLAUDE.md
+- Deprecated widgets replaced → must use project widget equivalents
+- Import paths changed → verify all resolve
+
+Auto-fix all. Re-scan until 0 violations.
+
+### Step 2: Full project build via MCP (REQUIRED for upgrades)
+Upgrades affect the entire project, not just individual files. Run FULL build:
+```
+1. Call foapp-build.run_terminal(command: "flutter clean", cwd: "flutter")
+2. Call foapp-build.run_terminal(command: "flutter pub get", cwd: "flutter")
+3. Call foapp-build.flutter_analyze(paths: [])  — analyze ENTIRE project
+4. If errors → read → fix → re-analyze → loop until 0 errors
+5. Call foapp-build.gradle_build(task: "compileDebugKotlin")
+6. If Kotlin errors → fix → re-build → loop until success
+7. Call foapp-build.run_terminal(command: "flutter build apk --debug", cwd: "flutter")
+8. If build fails → read errors → fix → re-build → loop until success
+```
+
+If MCP not available, tell developer the full command sequence to run.
+
+**CRITICAL: Upgrade changes MUST compile before marking complete. A broken build after upgrade is worse than no upgrade.**
