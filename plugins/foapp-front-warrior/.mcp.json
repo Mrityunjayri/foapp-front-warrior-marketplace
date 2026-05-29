@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "foapp-build": {
-      "command": "node",
-      "args": ["${PLUGIN_DIR}/mcp/build-server.js"]
+      "command": "npx",
+      "args": ["-y", "foapp-build-server"]
     }
   }
 }
